@@ -1,0 +1,1206 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Revo Treasury testnet simulation API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: treasury
+    description: Testnet treasury operations
+  - name: auth
+    description: Wallet-based operator authentication (SIWE-style)
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /chain/status:
+    get:
+      operationId: getChainStatus
+      tags: [treasury]
+      summary: Live Arc Testnet chain connectivity status
+      responses:
+        "200":
+          description: Current chain status from the Arc Testnet RPC
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChainStatus"
+  /chain/params:
+    get:
+      operationId: getChainParams
+      tags: [treasury]
+      summary: Public Arc Testnet chain parameters for wallet setup (no auth - needed before sign-in to detect/switch networks)
+      responses:
+        "200":
+          description: Chain parameters shared by every treasury
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChainParams"
+  /treasury/dashboard:
+    get:
+      operationId: getTreasuryDashboard
+      tags: [treasury]
+      summary: Get the treasury command center snapshot
+      responses:
+        "200":
+          description: Current dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryDashboard"
+  /treasury/signals:
+    get:
+      operationId: listSignals
+      tags: [treasury]
+      summary: List active multimodal alpha signals
+      responses:
+        "200":
+          description: Active signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Signal"
+  /treasury/proposals:
+    get:
+      operationId: listTreasuryProposals
+      tags: [treasury]
+      summary: List governance proposals and simulated agent actions
+      responses:
+        "200":
+          description: Proposal timeline
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TreasuryProposal"
+  /treasury/drill/start:
+    post:
+      operationId: startRiskDrill
+      tags: [treasury]
+      summary: Start the simulated protocol-exploit safety drill (testnet drill only)
+      responses:
+        "200":
+          description: Drill started (or already running)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrillStatus"
+  /treasury/drill/reset:
+    post:
+      operationId: resetRiskDrill
+      tags: [treasury]
+      summary: End the safety drill and restore the baseline treasury state
+      responses:
+        "200":
+          description: Drill reset to baseline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrillStatus"
+  /treasury/command:
+    post:
+      operationId: submitTreasuryCommand
+      tags: [treasury]
+      summary: Compile a natural-language instruction into a structured policy draft for review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TreasuryCommandInput"
+      responses:
+        "201":
+          description: Policy draft compiled and awaiting operator approval
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+  /treasury/policies:
+    get:
+      operationId: listTreasuryPolicies
+      tags: [treasury]
+      summary: List compiled policies (drafts, active, rejected, superseded)
+      responses:
+        "200":
+          description: Policy timeline, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Policy"
+  /treasury/policies/{policyId}/approve:
+    post:
+      operationId: approveTreasuryPolicy
+      tags: [treasury]
+      summary: Approve a policy draft; activates it and lets the engine draft a rebalance proposal
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+  /treasury/policies/{policyId}/reject:
+    post:
+      operationId: rejectTreasuryPolicy
+      tags: [treasury]
+      summary: Reject a policy draft with a reason (recorded in the audit log)
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionReason"
+      responses:
+        "200":
+          description: Policy rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+  /treasury/proposals/{proposalId}/approve:
+    post:
+      operationId: approveTreasuryProposal
+      tags: [treasury]
+      summary: Approve a proposal; executes the simulated rebalance on the dashboard
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Proposal executed (simulated)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryProposal"
+  /treasury/proposals/{proposalId}/reject:
+    post:
+      operationId: rejectTreasuryProposal
+      tags: [treasury]
+      summary: Reject a proposal with a reason (recorded in the audit log); no action is taken
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionReason"
+      responses:
+        "200":
+          description: Proposal rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryProposal"
+  /treasury/agent/ask:
+    post:
+      operationId: askTreasuryAgent
+      tags: [treasury]
+      summary: Ask Arcus, the treasury agent, to explain its recent decisions using live treasury data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentQuestionInput"
+      responses:
+        "200":
+          description: Grounded answer from the agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentAnswer"
+  /treasury/agent/chat:
+    get:
+      operationId: listAgentChatMessages
+      tags: [treasury]
+      summary: Get the persisted Arcus conversation history (oldest first)
+      responses:
+        "200":
+          description: Persisted chat messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentChatMessage"
+  /treasury/wallet:
+    get:
+      operationId: getTreasuryWalletInfo
+      tags: [treasury]
+      summary: Get the treasury's Arc Testnet deposit address and chain parameters
+      responses:
+        "200":
+          description: Treasury on-chain wallet info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryWalletInfo"
+  /treasury/wallet/deposits:
+    post:
+      operationId: claimTreasuryDeposit
+      tags: [treasury]
+      summary: Credit a confirmed on-chain testnet USDC transfer to the treasury (verified against the Arc Testnet RPC)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositClaim"
+      responses:
+        "201":
+          description: Deposit verified on-chain and credited to the treasury
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnchainTransfer"
+  /treasury/wallet/withdrawals:
+    post:
+      operationId: requestTreasuryWithdrawal
+      tags: [treasury]
+      summary: Withdraw previously deposited testnet USDC back to the depositor's wallet (sent on-chain by the treasury)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalRequest"
+      responses:
+        "201":
+          description: Withdrawal sent and confirmed on-chain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnchainTransfer"
+  /treasury/wallet/{address}/position:
+    get:
+      operationId: getTreasuryWalletPosition
+      tags: [treasury]
+      summary: Get a depositor wallet's net deposited balance and on-chain transfer history
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Depositor position and transfer ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletPosition"
+  /treasury/mode:
+    get:
+      operationId: getTreasuryMode
+      tags: [treasury]
+      summary: Get the current operating mode
+      responses:
+        "200":
+          description: Current operating mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatingMode"
+    put:
+      operationId: setTreasuryMode
+      tags: [treasury]
+      summary: Set the operating mode (safe, managed, or autonomous)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatingModeUpdate"
+      responses:
+        "200":
+          description: Updated operating mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatingMode"
+  /auth/nonce:
+    post:
+      operationId: requestAuthNonce
+      tags: [auth]
+      summary: Issue a short-lived single-use sign-in challenge for a wallet address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletAddressInput"
+      responses:
+        "201":
+          description: Challenge message to sign with the wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthChallenge"
+  /auth/verify:
+    post:
+      operationId: verifyAuthSignature
+      tags: [auth]
+      summary: Verify the signed challenge and start an operator session (HttpOnly cookie)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignedAuthChallenge"
+      responses:
+        "200":
+          description: Session established; the token is delivered as an HttpOnly cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorSession"
+  /auth/logout:
+    post:
+      operationId: logoutOperator
+      tags: [auth]
+      summary: Revoke the current operator session and clear the cookie
+      responses:
+        "204":
+          description: Session revoked
+  /auth/me:
+    get:
+      operationId: getAuthSession
+      tags: [auth]
+      summary: Get the current operator session, if signed in
+      responses:
+        "200":
+          description: Current operator session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+  /treasury/security:
+    get:
+      operationId: getSecurityStatus
+      tags: [treasury]
+      summary: Get the emergency pause state and persisted withdrawal limits
+      responses:
+        "200":
+          description: Current security controls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityStatus"
+  /treasury/security/pause:
+    post:
+      operationId: setEmergencyPause
+      tags: [treasury]
+      summary: Activate or deactivate the emergency pause (guardian/admin; deactivation requires a recent sign-in)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmergencyPauseInput"
+      responses:
+        "200":
+          description: Updated security controls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityStatus"
+  /treasury/security/limits:
+    put:
+      operationId: setSecurityLimits
+      tags: [treasury]
+      summary: Update the persisted withdrawal caps (admin only, recent sign-in required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecurityLimitsInput"
+      responses:
+        "200":
+          description: Updated security controls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityStatus"
+  /treasury/security/audit:
+    get:
+      operationId: exportAuditLog
+      tags: [treasury]
+      summary: Export the hash-chained audit log with a fresh integrity verification (operators only)
+      responses:
+        "200":
+          description: Full audit chain plus verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditExport"
+  /treasury/security/alerts:
+    get:
+      operationId: listAlerts
+      tags: [treasury]
+      summary: List recent persisted alerts, newest first (operators only)
+      responses:
+        "200":
+          description: Recent alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AlertItem"
+  /treasury/security/alerts/{alertId}/ack:
+    post:
+      operationId: acknowledgeAlert
+      tags: [treasury]
+      summary: Acknowledge an alert so it leaves the active list (operators only)
+      parameters:
+        - name: alertId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The acknowledged alert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertItem"
+  /treasury/operators:
+    get:
+      operationId: listOperators
+      tags: [treasury]
+      summary: List registered operators and their roles (admin only)
+      responses:
+        "200":
+          description: Operator registry
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OperatorInfo"
+  /treasury/operators/{wallet}:
+    put:
+      operationId: setOperatorRole
+      tags: [treasury]
+      summary: Add an operator or change their role (admin only, recent sign-in required)
+      parameters:
+        - name: wallet
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatorRoleInput"
+      responses:
+        "200":
+          description: Operator record after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorInfo"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          description: ok | degraded
+        checks:
+          type: object
+          required: [database, market, chain]
+          properties:
+            database:
+              type: string
+              description: ok | error
+            market:
+              type: string
+              description: ok | stale | unavailable
+            chain:
+              type: string
+              description: ok | stale | error
+      required:
+        - status
+        - checks
+    ChainStatus:
+      type: object
+      required: [network, expectedChainId, connected, stale, checkedAt]
+      properties:
+        network:
+          type: string
+        expectedChainId:
+          type: number
+        connected:
+          type: boolean
+        chainId:
+          type: number
+        blockNumber:
+          type: number
+        gasPriceWei:
+          type: string
+        latencyMs:
+          type: number
+        stale:
+          type: boolean
+        checkedAt:
+          type: string
+          format: date-time
+    ChainParams:
+      type: object
+      required: [chainId, chainIdHex, chainName, rpcUrl, usdcAddress, usdcDecimals, explorerUrl, faucetUrl]
+      properties:
+        chainId:
+          type: number
+          description: Arc Testnet chain id (5042002)
+        chainIdHex:
+          type: string
+          description: Chain id as a 0x-prefixed hex string for wallet RPC calls
+        chainName:
+          type: string
+        rpcUrl:
+          type: string
+        usdcAddress:
+          type: string
+          description: USDC ERC-20 interface contract address on Arc Testnet
+        usdcDecimals:
+          type: number
+          description: Decimals of the USDC ERC-20 interface (6)
+        explorerUrl:
+          type: string
+        faucetUrl:
+          type: string
+          description: Where to get Arc Testnet USDC
+    Allocation:
+      type: object
+      required: [symbol, name, percentage, value, tone]
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        percentage:
+          type: number
+        value:
+          type: number
+        tone:
+          type: string
+    PortfolioPoint:
+      type: object
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: number
+    AgentActivity:
+      type: object
+      required: [id, time, title, detail, status]
+      properties:
+        id:
+          type: string
+        time:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        status:
+          type: string
+    Guardrail:
+      type: object
+      required: [id, label, value, state]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        value:
+          type: string
+        state:
+          type: string
+    DrillStatus:
+      type: object
+      required: [active, phase, progress, startedAt]
+      properties:
+        active:
+          type: boolean
+        phase:
+          type: string
+          description: idle | alert | proposal | rotating | secured
+        progress:
+          type: number
+          description: Overall drill progress from 0 to 100
+        startedAt:
+          type: ["string", "null"]
+    TreasuryDashboard:
+      type: object
+      required: [totalValue, funded, dayChange, deployed, riskScore, status, network, mode, allocations, portfolioHistory, activities, guardrails, drill]
+      properties:
+        totalValue:
+          type: number
+        funded:
+          type: boolean
+          description: >-
+            True once the treasury has ever received a confirmed on-chain
+            deposit. Durable first-run predicate - unlike totalValue (which is
+            rounded and can read 0 for a small funded balance), this never
+            flips back to false.
+        mode:
+          type: string
+          description: safe | managed | autonomous
+        dayChange:
+          type: number
+        deployed:
+          type: number
+        riskScore:
+          type: number
+        status:
+          type: string
+        network:
+          type: string
+        allocations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Allocation"
+        portfolioHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortfolioPoint"
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentActivity"
+        guardrails:
+          type: array
+          items:
+            $ref: "#/components/schemas/Guardrail"
+        drill:
+          $ref: "#/components/schemas/DrillStatus"
+    SignalComponent:
+      type: object
+      required: [source, label, score, weight, detail]
+      properties:
+        source:
+          type: string
+          description: The upstream data source this component was computed from
+        label:
+          type: string
+          description: Short human label, e.g. "Dev activity"
+        score:
+          type: number
+          description: Signed contribution from -100 (bearish) to +100 (bullish)
+        weight:
+          type: number
+          description: Weight of this component in the composite score (0..1, weights sum to 1)
+        detail:
+          type: string
+          description: The actual observation backing this component score
+    Signal:
+      type: object
+      required: [id, asset, score, direction, title, sources, confidence, time, detail, components]
+      properties:
+        id:
+          type: string
+        asset:
+          type: string
+        score:
+          type: number
+          description: Composite 0-100 score derived from the weighted component scores
+        direction:
+          type: string
+        title:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        time:
+          type: string
+        detail:
+          type: string
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/SignalComponent"
+    AllocationTarget:
+      type: object
+      required: [symbol, percentage]
+      properties:
+        symbol:
+          type: string
+        percentage:
+          type: number
+    TreasuryProposal:
+      type: object
+      required: [id, title, summary, status, createdAt, action, safetyChecks, command]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+          description: pending | executed | rejected | simulation-ready (legacy)
+        createdAt:
+          type: string
+        action:
+          type: string
+        safetyChecks:
+          type: array
+          items:
+            type: string
+        command:
+          type: string
+        policyId:
+          type: ["string", "null"]
+        targetAllocations:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/AllocationTarget"
+        decidedAt:
+          type: ["string", "null"]
+    PolicyRules:
+      type: object
+      required: [maxAllocationPct, stablecoinReserveMinPct, drawdownLimitPct, riskTolerance]
+      properties:
+        maxAllocationPct:
+          type: number
+          description: Max % of the treasury in any single yield protocol (hard cap 35)
+        stablecoinReserveMinPct:
+          type: number
+          description: Minimum % held in stablecoins (hard floor 25)
+        drawdownLimitPct:
+          type: number
+          description: Max tolerated portfolio drawdown % before de-risking
+        riskTolerance:
+          type: string
+          description: low | medium | high
+    Policy:
+      type: object
+      required: [id, name, summary, sourceCommand, rules, status, createdAt, decidedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        sourceCommand:
+          type: string
+        rules:
+          $ref: "#/components/schemas/PolicyRules"
+        status:
+          type: string
+          description: draft | active | rejected | superseded
+        createdAt:
+          type: string
+        decidedAt:
+          type: ["string", "null"]
+    OperatingMode:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          description: safe | managed | autonomous
+    OperatingModeUpdate:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [safe, managed, autonomous]
+    TreasuryCommandInput:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: string
+          minLength: 4
+          maxLength: 600
+    AgentQuestionInput:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 3
+          maxLength: 600
+    TreasuryWalletInfo:
+      type: object
+      required: [treasuryAddress, chainId, chainIdHex, chainName, rpcUrl, usdcAddress, usdcDecimals, explorerUrl, faucetUrl]
+      properties:
+        treasuryAddress:
+          type: string
+          description: The treasury's Arc Testnet address that receives deposits
+        chainId:
+          type: number
+          description: Arc Testnet chain id (5042002)
+        chainIdHex:
+          type: string
+          description: Chain id as a 0x-prefixed hex string for wallet RPC calls
+        chainName:
+          type: string
+        rpcUrl:
+          type: string
+        usdcAddress:
+          type: string
+          description: USDC ERC-20 interface contract address on Arc Testnet
+        usdcDecimals:
+          type: number
+          description: Decimals of the USDC ERC-20 interface (6)
+        explorerUrl:
+          type: string
+        faucetUrl:
+          type: string
+          description: Where to get Arc Testnet USDC
+    OnchainTransfer:
+      type: object
+      required: [id, direction, wallet, amountUsdc, txHash, status, explorerTxUrl, createdAt, confirmedAt]
+      properties:
+        id:
+          type: string
+        direction:
+          type: string
+          description: deposit | withdrawal
+        wallet:
+          type: string
+          description: Counterparty user wallet address (lowercased)
+        amountUsdc:
+          type: number
+        txHash:
+          type: ["string", "null"]
+        status:
+          type: string
+          description: confirmed | pending | failed
+        explorerTxUrl:
+          type: ["string", "null"]
+          description: Block explorer link for the transaction
+        createdAt:
+          type: string
+        confirmedAt:
+          type: ["string", "null"]
+    WalletPosition:
+      type: object
+      required: [address, netDepositedUsdc, transfers]
+      properties:
+        address:
+          type: string
+        netDepositedUsdc:
+          type: number
+          description: Confirmed deposits minus confirmed/pending withdrawals - the amount this wallet can withdraw
+        transfers:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnchainTransfer"
+    DepositClaim:
+      type: object
+      required: [txHash]
+      properties:
+        txHash:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{64}$"
+          description: Hash of the on-chain testnet USDC transfer to the treasury address
+    WithdrawalRequest:
+      type: object
+      required: [address, amountUsdc, issuedAt, signature]
+      properties:
+        address:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{40}$"
+          description: Destination wallet - must have a sufficient net deposited balance
+        amountUsdc:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1000000000
+        issuedAt:
+          type: string
+          description: ISO timestamp the authorization message was signed at (valid for 5 minutes)
+        signature:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{130}$"
+          description: EIP-191 personal_sign signature of the withdrawal authorization message, proving ownership of the destination wallet
+    AgentAnswer:
+      type: object
+      required: [agent, answer, askedAt]
+      properties:
+        agent:
+          type: string
+          description: The agent's name (Arcus)
+        answer:
+          type: string
+        askedAt:
+          type: string
+    AuditEvent:
+      type: object
+      required: [seq, time, action, result, prevHash, hash]
+      properties:
+        seq:
+          type: number
+        time:
+          type: string
+        actorWallet:
+          type: string
+          nullable: true
+        actorRole:
+          type: string
+          nullable: true
+        action:
+          type: string
+        resourceId:
+          type: string
+          nullable: true
+        result:
+          type: string
+          description: ok, denied, or failed
+        reason:
+          type: string
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+          description: JSON-encoded event detail, exactly as hashed into the chain
+        prevHash:
+          type: string
+        hash:
+          type: string
+    AuditExport:
+      type: object
+      required: [verified, brokenAtSeq, exportedAt, events]
+      properties:
+        verified:
+          type: boolean
+          description: True when the whole hash chain verified at export time
+        brokenAtSeq:
+          type: number
+          nullable: true
+          description: First sequence number where verification failed, if any
+        exportedAt:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+    AlertItem:
+      type: object
+      required: [id, time, severity, kind, title, detail, acknowledgedAt]
+      properties:
+        id:
+          type: string
+        time:
+          type: string
+        severity:
+          type: string
+          description: info, warning, or critical
+        kind:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        data:
+          type: string
+          nullable: true
+          description: JSON-encoded structured context for the alert
+        acknowledgedAt:
+          type: string
+          nullable: true
+    AgentChatMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          description: Who wrote the message ("user" or "agent")
+        content:
+          type: string
+        wallet:
+          type: string
+          nullable: true
+          description: Wallet of the operator who asked, when the question was sent while signed in
+        createdAt:
+          type: string
+    WalletAddressInput:
+      type: object
+      required: [address]
+      properties:
+        address:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{40}$"
+    AuthChallenge:
+      type: object
+      required: [message, expiresAt]
+      properties:
+        message:
+          type: string
+          description: The exact message the wallet must sign (EIP-191 personal_sign)
+        expiresAt:
+          type: string
+          description: When this challenge expires (single-use, ~5 minutes)
+    SignedAuthChallenge:
+      type: object
+      required: [address, signature]
+      properties:
+        address:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{40}$"
+        signature:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{130}$"
+          description: EIP-191 signature of the issued challenge message
+    OperatorSession:
+      type: object
+      required: [wallet, role, treasuryId, sessionExpiresAt]
+      properties:
+        wallet:
+          type: string
+        role:
+          type: string
+          description: viewer | strategist | approver | guardian | admin
+        treasuryId:
+          type: string
+          description: The treasury this operator belongs to (one wallet, one treasury)
+        sessionExpiresAt:
+          type: string
+    AuthSession:
+      type: object
+      required: [wallet, role, treasuryId, sessionCreatedAt]
+      properties:
+        wallet:
+          type: string
+        role:
+          type: string
+          description: viewer | strategist | approver | guardian | admin
+        treasuryId:
+          type: string
+          description: The treasury this operator belongs to (one wallet, one treasury)
+        treasuryName:
+          type: string
+          description: Display name of the operator's treasury
+        sessionCreatedAt:
+          type: string
+          description: When this session was signed in - sensitive changes require a recent sign-in
+    DecisionReason:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: Why the draft/proposal was rejected; stored in the audit log
+    SecurityStatus:
+      type: object
+      required: [pauseActive, pauseReason, pauseActivatedAt, pauseRevision, maxPerWithdrawalUsdc, maxWallet24hUsdc, maxGlobal24hUsdc]
+      properties:
+        pauseActive:
+          type: boolean
+        pauseReason:
+          type: ["string", "null"]
+        pauseActivatedAt:
+          type: ["string", "null"]
+        pauseRevision:
+          type: number
+        maxPerWithdrawalUsdc:
+          type: number
+        maxWallet24hUsdc:
+          type: number
+        maxGlobal24hUsdc:
+          type: number
+    EmergencyPauseInput:
+      type: object
+      required: [active, reason]
+      properties:
+        active:
+          type: boolean
+        reason:
+          type: string
+          minLength: 4
+          maxLength: 300
+          description: Why the pause is being activated/deactivated (audited)
+    SecurityLimitsInput:
+      type: object
+      required: [maxPerWithdrawalUsdc, maxWallet24hUsdc, maxGlobal24hUsdc]
+      properties:
+        maxPerWithdrawalUsdc:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1000000000
+        maxWallet24hUsdc:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1000000000
+        maxGlobal24hUsdc:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1000000000
+    OperatorInfo:
+      type: object
+      required: [wallet, role, addedBy, createdAt]
+      properties:
+        wallet:
+          type: string
+        role:
+          type: string
+          description: viewer | strategist | approver | guardian | admin
+        addedBy:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+    OperatorRoleInput:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [viewer, strategist, approver, guardian, admin]
