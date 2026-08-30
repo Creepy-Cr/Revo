@@ -8,6 +8,16 @@ export const logger = pino({
     "req.headers.authorization",
     "req.headers.cookie",
     "res.headers['set-cookie']",
+    "privateKey",
+    "signedPayload",
+    "serialized",
+    "authSignature",
+    "signature",
+    "*.privateKey",
+    "*.signedPayload",
+    "*.serialized",
+    "*.authSignature",
+    "*.signature",
   ],
   ...(isProduction
     ? {}

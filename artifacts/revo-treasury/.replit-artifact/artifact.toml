@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Revo Treasury"
+description = "A production-intent Arc Testnet DAO treasury command center with wallet administration, live signals, policy governance, testnet custody, and Claude Opus 5 treasury intelligence."
+version = "1.0.0"
+id = "artifacts/revo-treasury"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19551
+
+[services.development]
+run = "pnpm --filter @workspace/revo-treasury run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/revo-treasury", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/revo-treasury/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19551"
+BASE_PATH = "/"

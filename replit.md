@@ -1,45 +1,62 @@
-# [Project name]
+# Revo Treasury
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Revo is a testnet-only DAO treasury command center for wallet-authenticated operators, combining Arc Testnet custody, live signals, governance, deterministic policy enforcement, and Claude Opus 5 treasury intelligence.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Use the managed workflows `artifacts/revo-treasury: web` and `artifacts/api-server: API Server`; do not add replacement workflows.
+- `pnpm run typecheck` — canonical full workspace typecheck.
+- `pnpm run build` — typecheck and production-build every package.
+- `pnpm --filter @workspace/api-server run test` — API/custody regression tests.
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas after every OpenAPI change.
+- `pnpm --filter @workspace/db run push` — apply schema changes to development only. Production schema changes are handled by Replit Publish.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- pnpm workspaces, Node.js, TypeScript, React 19, Vite, Express 5
+- PostgreSQL + Drizzle ORM
+- OpenAPI + Orval-generated React Query and Zod packages
+- viem for Arc Testnet wallet/RPC behavior
+- Anthropic through Replit AI Integrations, using `claude-opus-5`
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- Frontend artifact: `artifacts/revo-treasury`
+- Shared API artifact: `artifacts/api-server`
+- API contract: `lib/api-spec/openapi.yaml`
+- Generated browser client: `lib/api-client-react`
+- Generated server validation: `lib/api-zod`
+- Database source of truth: `lib/db/src/schema`
+- Anthropic client: `lib/integrations-anthropic-ai`
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The browser and API communicate through relative `/api` URLs so the same build works in development and production.
+- Wallet signatures establish server-side, HttpOnly sessions; every protected query is scoped to the operator's treasury.
+- Claude compiles and explains policies, but deterministic server code applies governance and guardrails.
+- Arc Testnet deposits and withdrawals are real testnet transactions. Strategic rebalances and risk drills remain explicitly simulated.
+- Production requires a custody secret distinct from the session-signing secret.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Public marketing, documentation, legal, and risk pages
+- Wallet-based operator onboarding and role-aware administration
+- Treasury dashboard, allocations, NAV, signals, and activity
+- Natural-language policy compilation and approval
+- Proposal governance and operating modes
+- Claude-powered Arcus chat grounded in live treasury state
+- Arc Testnet USDC custody, deposit verification, and withdrawal reconciliation
+- Security limits, emergency pause, alerts, and verifiable audit export
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Never present simulated portfolio rebalances as on-chain execution.
+- Do not add startup or deployment-time database DDL; Replit Publish handles the production schema diff.
+- Do not log wallet signatures, session tokens, private keys, custody ciphertext, or environment values.
+- `CUSTODY_MASTER_SECRET` must exist before publishing.
+- This app has long-running reconciliation workers; choose an always-running VM deployment rather than autoscale.
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See `README.md` for product and API usage details.
+- See the `pnpm-workspace`, `react-vite`, database, and deployment skills before changing hosting or contracts.
