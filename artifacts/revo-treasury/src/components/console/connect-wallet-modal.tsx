@@ -8,6 +8,7 @@ import metamaskLogo from '@/assets/wallets/metamask.svg';
 import okxLogo from '@/assets/wallets/okx.svg';
 import phantomLogo from '@/assets/wallets/phantom.svg';
 import rabbyLogo from '@/assets/wallets/rabby.svg';
+import { trackEvent } from '@/lib/analytics';
 
 const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
@@ -122,6 +123,7 @@ export function ConnectWalletModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const overlayRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
 
   // Match discovered providers to the curated list by rdns.
   const byRdns = new Map<string, Eip6963ProviderDetail>();
@@ -139,6 +141,13 @@ export function ConnectWalletModal({ isOpen, onClose }: { isOpen: boolean; onClo
   useEffect(() => {
     if (!isOpen) setPendingId(null);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && !wasOpen.current) {
+      trackEvent('wallet_chooser_opened', { injected_provider_present: hasProvider });
+    }
+    wasOpen.current = isOpen;
+  }, [isOpen, hasProvider]);
 
   // Auto-close on successful connection
   useEffect(() => {
@@ -205,6 +214,7 @@ export function ConnectWalletModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
   const connectWith = async (id: string, provider?: Eip6963ProviderDetail['provider']) => {
     if (pendingId) return;
+    trackEvent('wallet_provider_selected', { provider: id, detected: Boolean(provider) });
     setPendingId(id);
     try {
       await connect(provider);

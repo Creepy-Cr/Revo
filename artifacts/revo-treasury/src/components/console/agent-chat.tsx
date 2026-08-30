@@ -9,6 +9,7 @@ import {
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { useAuthContext } from './auth-context';
+import { trackEvent } from '@/lib/analytics';
 
 export const AGENT_NAME = 'Arcus';
 
@@ -64,6 +65,8 @@ function AgentChatImpl() {
   const submit = (question: string) => {
     const trimmed = question.trim();
     if (!session || trimmed.length < 3 || askAgent.isPending) return;
+    const source = SUGGESTIONS.includes(trimmed) ? 'suggestion' : 'typed';
+    trackEvent('arcus_question_submitted', { source });
     setDraft('');
     setLocalMessages((prev) => [
       ...prev,
@@ -73,6 +76,7 @@ function AgentChatImpl() {
       { data: { question: trimmed } },
       {
         onSuccess: async () => {
+          trackEvent('arcus_answer_received', { source });
           await queryClient.invalidateQueries({ queryKey: getListAgentChatMessagesQueryKey() });
           setLocalMessages([]);
         },

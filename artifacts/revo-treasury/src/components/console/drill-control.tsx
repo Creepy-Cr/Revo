@@ -4,6 +4,7 @@ import { AlertOctagon, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useAuthContext } from './auth-context';
+import { trackEvent } from '@/lib/analytics';
 
 export function DrillControl({ drill }: { drill?: any }) {
   const queryClient = useQueryClient();
@@ -25,6 +26,7 @@ export function DrillControl({ drill }: { drill?: any }) {
     }
     startDrill.mutate(undefined, {
       onSuccess: () => {
+        trackEvent('risk_drill_changed', { state: 'active' });
         toast({ title: 'Drill Initiated', variant: 'destructive' });
         invalidate();
       },
@@ -44,6 +46,7 @@ export function DrillControl({ drill }: { drill?: any }) {
     }
     resetDrill.mutate(undefined, {
       onSuccess: () => {
+        trackEvent('risk_drill_changed', { state: 'baseline' });
         toast({ title: 'System Restored' });
         invalidate();
       },

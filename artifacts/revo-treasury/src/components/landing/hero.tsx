@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Link } from 'wouter';
+import { trackEvent } from '@/lib/analytics';
 
 export function Hero() {
   return (
@@ -37,6 +38,7 @@ export function Hero() {
         >
           <Link
             href="/app"
+            onClick={() => trackEvent('console_launch_clicked', { location: 'hero' })}
             data-testid="hero-launch-console"
             className="group relative px-8 py-4 bg-white text-black rounded-full font-sans font-semibold text-lg tracking-tight overflow-hidden transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_40px_rgba(252,59,0,0.15)] hover:shadow-[0_0_60px_rgba(252,59,0,0.5)] border border-transparent hover:border-primary/50"
           >

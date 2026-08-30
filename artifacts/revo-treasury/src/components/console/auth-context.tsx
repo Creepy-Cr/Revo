@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { createWalletClient, custom, type Hex } from 'viem';
 import { getInjectedProvider, buildArcChain } from '@/lib/arc-wallet';
 import { apiErrorMessage } from '@/lib/api-error';
+import { trackEvent } from '@/lib/analytics';
 
 type AuthContextType = {
   session: AuthSession | null;
@@ -64,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         message,
       });
 
-      await verifySig.mutateAsync({
+      const verifiedSession = await verifySig.mutateAsync({
         data: { address: wallet.address, signature },
       });
 
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // session change so one wallet's data can never bleed into another's.
       queryClient.clear();
       await queryClient.invalidateQueries({ queryKey: getGetAuthSessionQueryKey() });
+      trackEvent('wallet_authenticated', { role: verifiedSession.role });
       toast({ title: 'Signed in successfully' });
     } catch (error) {
       toast({
@@ -88,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Purge all tenant-scoped data from the cache on sign-out.
       queryClient.clear();
       await queryClient.invalidateQueries({ queryKey: getGetAuthSessionQueryKey() });
+      trackEvent('wallet_signed_out');
       toast({ title: 'Signed out' });
     } catch (error) {
       toast({

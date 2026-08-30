@@ -18,6 +18,7 @@ import { useWalletContext } from './wallet-context';
 import { useAuthContext } from './auth-context';
 import { buildArcChain, getInjectedProvider, shortAddress, usdcAbi, withdrawalAuthMessage } from '@/lib/arc-wallet';
 import { apiErrorMessage } from '@/lib/api-error';
+import { trackEvent } from '@/lib/analytics';
 
 const AMOUNT_PATTERN = /^\d+(\.\d{1,6})?$/;
 
@@ -142,6 +143,7 @@ function ConnectedPanel({
   const handleDeposit = async () => {
     const provider = getInjectedProvider();
     if (!provider || !depositValid) return;
+    trackEvent('custody_action_started', { action: 'deposit' });
     setDepositPhase('signing');
     try {
       const walletClient = createWalletClient({ chain, transport: custom(provider) });
@@ -161,6 +163,7 @@ function ConnectedPanel({
         { data: { txHash: hash } },
         {
           onSuccess: (transfer) => {
+            trackEvent('custody_action_succeeded', { action: 'deposit' });
             setDepositPhase('idle');
             setDepositAmount('');
             toast({
@@ -195,6 +198,7 @@ function ConnectedPanel({
     const provider = getInjectedProvider();
     if (!provider || !withdrawValid) return;
 
+    trackEvent('custody_action_started', { action: 'withdrawal' });
     let signature: string;
     const issuedAt = new Date().toISOString();
     setWithdrawSigning(true);
@@ -225,6 +229,7 @@ function ConnectedPanel({
       { data: { address, amountUsdc: Number(withdrawAmount), issuedAt, signature } },
       {
         onSuccess: (transfer) => {
+          trackEvent('custody_action_succeeded', { action: 'withdrawal' });
           setWithdrawAmount('');
           toast({
             title: 'Withdrawal Sent On-Chain',

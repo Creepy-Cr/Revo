@@ -5,6 +5,7 @@ import { Send, Loader2, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from './auth-context';
 import { apiErrorMessage } from '@/lib/api-error';
+import { trackEvent } from '@/lib/analytics';
 
 export function CommandConsole() {
   const [input, setInput] = useState('');
@@ -21,8 +22,10 @@ export function CommandConsole() {
     }
     if (!input.trim() || command.isPending) return;
 
+    trackEvent('policy_command_submitted');
     command.mutate({ data: { command: input } }, {
       onSuccess: (policy) => {
+        trackEvent('policy_compiled');
         toast({
           title: 'Policy Compiled',
           description: `Draft "${policy.name}" ready for review.`,

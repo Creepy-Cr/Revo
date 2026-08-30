@@ -23,6 +23,7 @@ import { EmergencyPauseBanner } from '@/components/console/emergency-pause-banne
 import { SecurityPanel } from '@/components/console/security-panel';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import * as Dialog from '@radix-ui/react-dialog';
+import { trackEvent } from '@/lib/analytics';
 
 const staggerContainer = {
   hidden: { opacity: 0 },
@@ -78,6 +79,10 @@ function ConsoleGate() {
 function ConsoleShell() {
   const [activeView, setActiveView] = useState('overview');
   const isDesktop = useMediaQuery('(min-width: 1280px)'); // xl breakpoint
+  const handleViewChange = (view: string) => {
+    trackEvent('console_view_selected', { view });
+    setActiveView(view);
+  };
 
   const { data: dashboard, isLoading, error, refetch } = useGetTreasuryDashboard({
     query: {
@@ -148,7 +153,7 @@ function ConsoleShell() {
               </div>
 
               <div className="relative z-20 shrink-0">
-                <Sidebar mode={dashboard?.mode} drillActive={drillActive} activeView={activeView} onViewChange={setActiveView} />
+                <Sidebar mode={dashboard?.mode} drillActive={drillActive} activeView={activeView} onViewChange={handleViewChange} />
               </div>
 
               <main className="relative z-10 flex-1 flex flex-col xl:flex-row min-w-0 overflow-y-auto xl:overflow-hidden">
@@ -199,7 +204,7 @@ function ConsoleShell() {
                     <div key={activeView} className="view-enter">
                       {activeView === 'overview' && (
                         unfunded ? (
-                          <TreasuryActivation onNavigate={setActiveView} />
+                          <TreasuryActivation onNavigate={handleViewChange} />
                         ) : (
                         <div className="space-y-6 lg:space-y-8">
                           <div className="flex flex-col gap-4">

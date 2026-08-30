@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 
 import { Link } from 'wouter';
+import { trackEvent } from '@/lib/analytics';
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -63,6 +64,7 @@ export function Navbar() {
         <div className="flex items-center gap-4">
           <Link
             href="/app"
+            onClick={() => trackEvent('console_launch_clicked', { location: 'navbar' })}
             data-testid="nav-launch-console"
             className="group relative bg-white text-black text-[14px] font-sans font-semibold tracking-tight px-6 py-2.5 rounded-full transition-all duration-500 hover:shadow-[0_0_20px_rgba(252,59,0,0.6)] active:scale-95 leading-relaxed overflow-hidden border border-transparent hover:border-primary/50"
           >
