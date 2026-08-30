@@ -1,0 +1,1 @@
+- [Artifact publish outputs](artifact-publish-outputs.md) — never exclude generated dist directories in .replitignore; publishing needs them after artifact builds.

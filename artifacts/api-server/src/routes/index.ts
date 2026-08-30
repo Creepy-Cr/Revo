@@ -8,6 +8,11 @@ import securityRouter from "./security";
 
 const router: IRouter = Router();
 
+// Artifact deployments probe the service mount path before promotion.
+router.get("/", (_req, res) => {
+  res.status(200).json({ status: "ok", service: "revo-treasury-api" });
+});
+
 router.use(healthRouter);
 router.use(authRouter);
 router.use(securityRouter);
