@@ -173,7 +173,7 @@ async function writeRouteFile(route, html) {
   const outputPath =
     route === '/'
       ? path.join(clientOutDir, 'index.html')
-      : path.join(clientOutDir, route.slice(1), 'index.html');
+      : path.join(clientOutDir, `${route.slice(1).replaceAll('/', '--')}.html`);
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, html);
 }

@@ -21,27 +21,51 @@ publicDir = "artifacts/revo-treasury/dist/public"
 
 [[services.production.rewrites]]
 from = "/docs"
-to = "/docs/index.html"
+to = "/docs.html"
+
+[[services.production.rewrites]]
+from = "/docs/"
+to = "/docs.html"
 
 [[services.production.rewrites]]
 from = "/privacy"
-to = "/privacy/index.html"
+to = "/privacy.html"
+
+[[services.production.rewrites]]
+from = "/privacy/"
+to = "/privacy.html"
 
 [[services.production.rewrites]]
 from = "/terms"
-to = "/terms/index.html"
+to = "/terms.html"
+
+[[services.production.rewrites]]
+from = "/terms/"
+to = "/terms.html"
 
 [[services.production.rewrites]]
 from = "/risk"
-to = "/risk/index.html"
+to = "/risk.html"
+
+[[services.production.rewrites]]
+from = "/risk/"
+to = "/risk.html"
 
 [[services.production.rewrites]]
 from = "/app"
-to = "/app/index.html"
+to = "/app.html"
+
+[[services.production.rewrites]]
+from = "/app/"
+to = "/app.html"
 
 [[services.production.rewrites]]
 from = "/dashboard"
-to = "/dashboard/index.html"
+to = "/dashboard.html"
+
+[[services.production.rewrites]]
+from = "/dashboard/"
+to = "/dashboard.html"
 
 [[services.production.rewrites]]
 from = "/*"

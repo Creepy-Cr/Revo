@@ -3,8 +3,8 @@ name: Prerender and SPA routing
 description: The routing constraints that keep crawlable public documents compatible with Revo's client-only console.
 ---
 
-When adding or changing public routes, keep build-time prerender output, exact extensionless-path rewrites, and the public route manifest synchronized. Keep authenticated SPA routes backed by explicit empty client shells rather than the prerendered homepage.
+When adding or changing public routes, keep the public route manifest, flat build-time prerender files, and exact rewrites for both extensionless and trailing-slash paths synchronized. Keep authenticated SPA routes backed by flat, empty client shells rather than the prerendered homepage.
 
-**Why:** A catch-all SPA rewrite can otherwise return homepage HTML for extensionless public URLs or protected console URLs. That makes crawlers see the wrong document and can cause hydration mismatches before the client router corrects the page.
+**Why:** Replit's static host lets physical directories shadow rewrites, redirecting an extensionless route to its slash form before the exact rule runs. The catch-all then serves homepage HTML for that slash URL, so crawlers see the wrong canonical document and may report noindex or missing content.
 
-**How to apply:** Emit one route-specific `index.html` per public canonical path, add an exact rewrite from each extensionless path to that file before the catch-all, and emit noindex empty-root shells for client-only routes. Verify direct HTTP responses, not only client navigation.
+**How to apply:** Emit route documents as flat files such as `docs.html`, map both `/docs` and `/docs/` to that file before the catch-all, normalize trailing slashes for client metadata, and use flat noindex shells for protected routes. Verify direct production HTTP responses after publishing, not only client navigation.

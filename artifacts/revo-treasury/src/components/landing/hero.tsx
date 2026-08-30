@@ -8,7 +8,7 @@ export function Hero() {
       <div className="hero-scrim" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
         <motion.h1
-          initial={{ opacity: 0, y: 20 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.2 }}
           className="text-5xl md:text-7xl lg:text-8xl font-display font-medium tracking-tighter leading-[1.05] mb-6 text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-white/60"
@@ -21,7 +21,7 @@ export function Hero() {
         </motion.h1>
 
         <motion.p
-          initial={{ opacity: 0, y: 20 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.3 }}
           className="text-lg md:text-xl text-white/85 max-w-2xl mb-12 leading-relaxed font-light tracking-tight [text-shadow:0_2px_20px_rgba(0,0,0,0.75),0_1px_4px_rgba(0,0,0,0.6)]"
@@ -31,7 +31,7 @@ export function Hero() {
         </motion.p>
 
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4 }}
           className="flex flex-col sm:flex-row items-center gap-6"

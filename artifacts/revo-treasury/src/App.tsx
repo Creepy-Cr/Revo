@@ -35,11 +35,14 @@ const PUBLIC_PAGE_COMPONENTS: Record<PublicPagePath, ComponentType> = {
   '/risk': Risk,
 };
 
+const normalizeLocation = (location: string) =>
+  location === '/' ? location : location.replace(/\/+$/, '') || '/';
+
 function Router() {
   const [location] = useLocation();
 
   useEffect(() => {
-    const metadata = PAGE_METADATA[location] ?? NOT_FOUND_METADATA;
+    const metadata = PAGE_METADATA[normalizeLocation(location)] ?? NOT_FOUND_METADATA;
     document.title = metadata.title;
     document
       .querySelector('meta[name="description"]')
