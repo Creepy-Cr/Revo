@@ -35,7 +35,12 @@ export function Navbar() {
     >
       <div className="w-full max-w-5xl relative">
       <div className="glass-pill flex items-center justify-between px-6 py-3 w-full">
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => scrollTo('hero')}>
+        <button
+          type="button"
+          aria-label="Revo home"
+          className="flex items-center gap-3 cursor-pointer group"
+          onClick={() => scrollTo('hero')}
+        >
           <img
             src={`${import.meta.env.BASE_URL}brand/revo-mark.png`}
             alt="Revo logo"
@@ -44,7 +49,7 @@ export function Navbar() {
           <span className="font-display font-semibold text-lg tracking-tight text-white flex items-center gap-3">
             Revo 
           </span>
-        </div>
+        </button>
 
         <div className="hidden md:flex items-center gap-9 font-display text-[15px] font-medium tracking-[0.04em] text-white/80 leading-relaxed">
           <button onClick={() => scrollTo('live-proof')} className="relative hover:text-white transition-colors duration-300 py-1 overflow-hidden group">

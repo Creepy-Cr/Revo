@@ -76,6 +76,7 @@ export function DocLayout({
           </div>
         </header>
 
+        <main id="main-content">
         {/* Masthead */}
         <div className="border-b border-white/[0.06]">
           <div className="max-w-6xl mx-auto px-4 pt-20 pb-0">
@@ -166,6 +167,7 @@ export function DocLayout({
             </div>
           </div>
         </div>
+        </main>
 
         <Footer />
       </div>
