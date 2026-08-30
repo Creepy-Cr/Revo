@@ -13,6 +13,7 @@ import {
   NOT_FOUND_METADATA,
   PAGE_METADATA,
   PUBLIC_PAGE_PATHS,
+  createStructuredData,
   type PublicPagePath,
 } from '@/lib/page-metadata';
 
@@ -55,15 +56,47 @@ function Router() {
     document
       .querySelector('meta[name="twitter:description"]')
       ?.setAttribute('content', metadata.description);
+    document
+      .querySelector('meta[property="og:type"]')
+      ?.setAttribute('content', metadata.schemaType === 'TechArticle' ? 'article' : 'website');
+    document
+      .querySelector('meta[name="robots"]')
+      ?.setAttribute('content', metadata.canonical ? 'index, follow' : 'noindex, nofollow');
 
-    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-    const ogUrl = document.querySelector<HTMLMetaElement>('meta[property="og:url"]');
+    let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    let ogUrl = document.querySelector<HTMLMetaElement>('meta[property="og:url"]');
     if (metadata.canonical) {
-      canonical?.setAttribute('href', metadata.canonical);
-      ogUrl?.setAttribute('content', metadata.canonical);
+      if (!canonical) {
+        canonical = document.createElement('link');
+        canonical.rel = 'canonical';
+        document.head.append(canonical);
+      }
+      if (!ogUrl) {
+        ogUrl = document.createElement('meta');
+        ogUrl.setAttribute('property', 'og:url');
+        document.head.append(ogUrl);
+      }
+      canonical.href = metadata.canonical;
+      ogUrl.content = metadata.canonical;
     } else {
       canonical?.remove();
       ogUrl?.remove();
+    }
+
+    const structuredData = createStructuredData(metadata);
+    let structuredDataScript = document.querySelector<HTMLScriptElement>(
+      'script#structured-data[type="application/ld+json"]',
+    );
+    if (structuredData) {
+      if (!structuredDataScript) {
+        structuredDataScript = document.createElement('script');
+        structuredDataScript.id = 'structured-data';
+        structuredDataScript.type = 'application/ld+json';
+        document.head.append(structuredDataScript);
+      }
+      structuredDataScript.textContent = JSON.stringify(structuredData);
+    } else {
+      structuredDataScript?.remove();
     }
   }, [location]);
 

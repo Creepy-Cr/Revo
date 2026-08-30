@@ -46,6 +46,7 @@ try {
   const {
     PAGE_METADATA,
     PUBLIC_PAGE_PATHS,
+    createStructuredData,
     renderPublicRoute,
   } = await import(rendererUrl);
 
@@ -55,6 +56,8 @@ try {
       PAGE_METADATA[route],
       await renderPublicRoute(route),
       route,
+      false,
+      createStructuredData(PAGE_METADATA[route]),
     );
     await writeRouteFile(route, html);
   }
@@ -83,7 +86,14 @@ function replaceOrInsertHeadTag(html, matcher, replacement) {
     : html.replace('</head>', `    ${replacement}\n  </head>`);
 }
 
-function withRouteDocument(shell, metadata, markup, prerenderPath, noindex = false) {
+function withRouteDocument(
+  shell,
+  metadata,
+  markup,
+  prerenderPath,
+  noindex = false,
+  structuredData = null,
+) {
   let html = shell
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(metadata.title)}</title>`)
     .replace(
@@ -105,6 +115,12 @@ function withRouteDocument(shell, metadata, markup, prerenderPath, noindex = fal
     .replace(
       /<meta\s+name=["']twitter:description["'][^>]*>/i,
       `<meta name="twitter:description" content="${escapeHtml(metadata.description)}" />`,
+    )
+    .replace(
+      /<meta\s+property=["']og:type["'][^>]*>/i,
+      `<meta property="og:type" content="${
+        metadata.schemaType === 'TechArticle' ? 'article' : 'website'
+      }" />`,
     );
 
   if (metadata.canonical) {
@@ -118,6 +134,10 @@ function withRouteDocument(shell, metadata, markup, prerenderPath, noindex = fal
       /<meta\s+property=["']og:url["'][^>]*>/i,
       `<meta property="og:url" content="${escapeHtml(metadata.canonical)}" />`,
     );
+  } else {
+    html = html
+      .replace(/\s*<link\s+rel=["']canonical["'][^>]*>/i, '')
+      .replace(/\s*<meta\s+property=["']og:url["'][^>]*>/i, '');
   }
 
   if (noindex) {
@@ -125,6 +145,18 @@ function withRouteDocument(shell, metadata, markup, prerenderPath, noindex = fal
       /<meta\s+name=["']robots["'][^>]*>/i,
       '<meta name="robots" content="noindex, nofollow" />',
     );
+  }
+
+  const structuredDataTag = /<script\s+id=["']structured-data["'][^>]*>[\s\S]*?<\/script>/i;
+  if (structuredData) {
+    const serialized = JSON.stringify(structuredData).replaceAll('<', '\\u003c');
+    html = replaceOrInsertHeadTag(
+      html,
+      structuredDataTag,
+      `<script id="structured-data" type="application/ld+json">${serialized}</script>`,
+    );
+  } else {
+    html = html.replace(structuredDataTag, '');
   }
 
   const rootAttributes = prerenderPath

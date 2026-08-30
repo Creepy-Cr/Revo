@@ -5,10 +5,11 @@ import App from './App';
 import {
   PAGE_METADATA,
   PUBLIC_PAGE_PATHS,
+  createStructuredData,
   type PublicPagePath,
 } from '@/lib/page-metadata';
 
-export { PAGE_METADATA, PUBLIC_PAGE_PATHS };
+export { PAGE_METADATA, PUBLIC_PAGE_PATHS, createStructuredData };
 
 export function renderPublicRoute(pathname: PublicPagePath): Promise<string> {
   return new Promise((resolve, reject) => {
