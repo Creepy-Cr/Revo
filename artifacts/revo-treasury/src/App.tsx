@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode, useEffect } from 'react';
+import { lazy, Suspense, type ComponentType, type ReactNode, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -9,6 +9,12 @@ import {
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
+import {
+  NOT_FOUND_METADATA,
+  PAGE_METADATA,
+  PUBLIC_PAGE_PATHS,
+  type PublicPagePath,
+} from '@/lib/page-metadata';
 
 const Landing = lazy(() => import('@/pages/landing'));
 const Console = lazy(() => import('@/pages/console'));
@@ -20,68 +26,57 @@ const NotFound = lazy(() => import('@/pages/not-found'));
 
 const queryClient = new QueryClient();
 
-const PAGE_METADATA: Record<string, { title: string; description: string }> = {
-  '/': {
-    title: 'Revo Treasury | Autonomous Treasury Intelligence',
-    description:
-      'Guarded DAO treasury operations on Arc Testnet with live signals, deterministic policy controls, and Claude-powered intelligence.',
-  },
-  '/app': {
-    title: 'Treasury Console | Revo',
-    description:
-      'Operate a testnet treasury with wallet authentication, policy governance, security controls, and transparent activity.',
-  },
-  '/dashboard': {
-    title: 'Treasury Console | Revo',
-    description:
-      'Operate a testnet treasury with wallet authentication, policy governance, security controls, and transparent activity.',
-  },
-  '/docs': {
-    title: 'Documentation | Revo Treasury',
-    description:
-      'Understand Revo Treasury architecture, APIs, Arc Testnet custody, governance, and testnet-only safety boundaries.',
-  },
-  '/privacy': {
-    title: 'Privacy | Revo Treasury',
-    description: 'Privacy information for the Revo Treasury testnet application.',
-  },
-  '/terms': {
-    title: 'Terms | Revo Treasury',
-    description: 'Terms for using the Revo Treasury testnet application.',
-  },
-  '/risk': {
-    title: 'Risk Disclosure | Revo Treasury',
-    description:
-      'Important risk and simulation disclosures for Revo Treasury on Arc Testnet.',
-  },
+const PUBLIC_PAGE_COMPONENTS: Record<PublicPagePath, ComponentType> = {
+  '/': Landing,
+  '/docs': Docs,
+  '/privacy': Privacy,
+  '/terms': Terms,
+  '/risk': Risk,
 };
 
 function Router() {
   const [location] = useLocation();
 
   useEffect(() => {
-    const metadata = PAGE_METADATA[location] ?? {
-      title: 'Page Not Found | Revo Treasury',
-      description: 'The requested Revo Treasury page could not be found.',
-    };
+    const metadata = PAGE_METADATA[location] ?? NOT_FOUND_METADATA;
     document.title = metadata.title;
     document
       .querySelector('meta[name="description"]')
       ?.setAttribute('content', metadata.description);
+    document
+      .querySelector('meta[property="og:title"]')
+      ?.setAttribute('content', metadata.title);
+    document
+      .querySelector('meta[property="og:description"]')
+      ?.setAttribute('content', metadata.description);
+    document
+      .querySelector('meta[name="twitter:title"]')
+      ?.setAttribute('content', metadata.title);
+    document
+      .querySelector('meta[name="twitter:description"]')
+      ?.setAttribute('content', metadata.description);
+
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const ogUrl = document.querySelector<HTMLMetaElement>('meta[property="og:url"]');
+    if (metadata.canonical) {
+      canonical?.setAttribute('href', metadata.canonical);
+      ogUrl?.setAttribute('content', metadata.canonical);
+    } else {
+      canonical?.remove();
+      ogUrl?.remove();
+    }
   }, [location]);
 
   return (
     <RoutedErrorBoundary>
       <Suspense fallback={<PageFallback />}>
         <Switch>
-          <Route path="/" component={Landing} />
+          {PUBLIC_PAGE_PATHS.map((path) => (
+            <Route key={path} path={path} component={PUBLIC_PAGE_COMPONENTS[path]} />
+          ))}
           <Route path="/app" component={Console} />
           {/* Legacy alias kept so older links to the command center keep working */}
           <Route path="/dashboard" component={Console} />
-          <Route path="/docs" component={Docs} />
-          <Route path="/privacy" component={Privacy} />
-          <Route path="/terms" component={Terms} />
-          <Route path="/risk" component={Risk} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
@@ -104,11 +99,14 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
-function App() {
+function App({ ssrPath }: { ssrPath?: string }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+        <WouterRouter
+          base={import.meta.env.BASE_URL.replace(/\/$/, '')}
+          ssrPath={ssrPath}
+        >
           <Router />
         </WouterRouter>
         <Toaster />

@@ -20,6 +20,30 @@ serve = "static"
 publicDir = "artifacts/revo-treasury/dist/public"
 
 [[services.production.rewrites]]
+from = "/docs"
+to = "/docs/index.html"
+
+[[services.production.rewrites]]
+from = "/privacy"
+to = "/privacy/index.html"
+
+[[services.production.rewrites]]
+from = "/terms"
+to = "/terms/index.html"
+
+[[services.production.rewrites]]
+from = "/risk"
+to = "/risk/index.html"
+
+[[services.production.rewrites]]
+from = "/app"
+to = "/app/index.html"
+
+[[services.production.rewrites]]
+from = "/dashboard"
+to = "/dashboard/index.html"
+
+[[services.production.rewrites]]
 from = "/*"
 to = "/index.html"
 

@@ -1,0 +1,11 @@
+# Revo Treasury
+
+> Revo Treasury is a testnet-only DAO treasury command center for guarded policy compilation, explainable market signals, governance workflows, and Arc Testnet custody.
+
+## Authoritative public resources
+
+- [Revo Treasury](https://therevo.xyz/): Product overview and treasury workflow.
+- [Documentation](https://therevo.xyz/docs): Architecture, API, governance, custody, and safety documentation.
+- [Risk Disclosure](https://therevo.xyz/risk): Testnet, simulation, AI, custody, and market-data limitations.
+- [Privacy Policy](https://therevo.xyz/privacy): Data handling and privacy practices.
+- [Terms of Service](https://therevo.xyz/terms): Terms governing use of the Revo testnet application.

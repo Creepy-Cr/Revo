@@ -1,2 +1,3 @@
 - [Artifact publish outputs](artifact-publish-outputs.md) — never exclude generated dist directories in .replitignore; publishing needs them after artifact builds.
 - [AI latency measurement](ai-latency-measurement.md) — benchmark the integrated model through the app route; declaration-only workspace packages are not standalone Node entrypoints.
+- [Prerender and SPA routing](prerender-spa-routing.md) — public static documents need exact rewrites; protected SPA routes need empty shells to avoid homepage hydration.
