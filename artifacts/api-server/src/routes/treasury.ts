@@ -52,6 +52,10 @@ const router: IRouter = Router();
 
 /** The agent's identity - one name, used consistently across API and UI. */
 const AGENT_NAME = "Arcus";
+/** Reserve maximum reasoning quality for structured policy compilation. */
+const POLICY_COMPILER_MODEL = "claude-opus-5";
+/** Interactive explanations prioritize low latency while retaining strong reasoning. */
+const ARCUS_CHAT_MODEL = "claude-sonnet-5";
 
 type OperatingMode = "safe" | "managed" | "autonomous";
 
@@ -338,7 +342,7 @@ router.post("/treasury/command", requireOperator(["strategist"]), commandGuard, 
     // by the deterministic policy engine, never by reinterpreting the text.
     const completion = await anthropic.messages.create(
       {
-        model: "claude-opus-5",
+        model: POLICY_COMPILER_MODEL,
         max_tokens: 8192,
         system:
           "You are the policy compiler for a TESTNET-ONLY DAO treasury simulator. Compile the user's instruction ONCE into structured, reviewable policy rules. Return JSON only (no prose, no code fences) with keys: name (short policy name), summary (one sentence of what the policy enforces), maxAllocationPct (number 5-35, max % in any single yield protocol), stablecoinReserveMinPct (number 25-80, minimum % held in stablecoins), drawdownLimitPct (number 5-30, max tolerated drawdown %), riskTolerance ('low'|'medium'|'high'). Respect the DAO mandate: never above 35% in a single protocol, never below 25% liquid USDC. If the instruction asks for something outside those bounds, clamp it and reflect the clamp in the summary. Never claim a trade happened.",
@@ -540,9 +544,10 @@ router.post("/treasury/agent/ask", requireOperator(["viewer", "strategist", "app
       policies: policies.map(serializePolicy),
     };
 
+    const generationStartedAt = Date.now();
     const completion = await anthropic.messages.create(
       {
-        model: "claude-opus-5",
+        model: ARCUS_CHAT_MODEL,
         max_tokens: 8192,
         system: `You are ${AGENT_NAME}, the autonomous treasury agent of Revo Treasury, a TESTNET-ONLY DAO treasury simulator on Arc Testnet. No real funds exist or move; everything is simulated with testnet USDC, and you must never suggest otherwise.
 
@@ -564,12 +569,23 @@ ${JSON.stringify(context)}`,
       // Bound the upstream spend: one attempt, hard 60s cap.
       { timeout: 60_000, maxRetries: 0 },
     );
+    const generationMs = Date.now() - generationStartedAt;
 
     const answerBlock = completion.content.find((b) => b.type === "text");
     const answer = answerBlock?.type === "text" ? answerBlock.text.trim() : undefined;
     if (!answer) {
       throw new Error("The agent returned an empty answer");
     }
+
+    req.log.info(
+      {
+        model: ARCUS_CHAT_MODEL,
+        generationMs,
+        inputTokens: completion.usage.input_tokens,
+        outputTokens: completion.usage.output_tokens,
+      },
+      "Generated Arcus answer",
+    );
 
     await db.insert(agentChatMessagesTable).values({
       id: `chat-${randomUUID()}`,
