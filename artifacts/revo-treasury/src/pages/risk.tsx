@@ -10,8 +10,8 @@ const sections: DocSection[] = [
           This Risk Disclaimer identifies the material risks of using the Revo Treasury platform
           (the "Service"). It forms part of your agreement with{' '}
           <strong>Revo Core Technologies</strong> and should be read together with the{' '}
-          <a href="terms" className="text-primary hover:underline">Terms of Service</a> and the{' '}
-          <a href="privacy" className="text-primary hover:underline">Privacy Policy</a>.
+          <a href="/terms" className="text-primary hover:underline">Terms of Service</a> and the{' '}
+          <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>.
         </p>
         <p>
           By using the Service you acknowledge that you have read, understood, and accepted every

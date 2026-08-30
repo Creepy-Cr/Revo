@@ -170,7 +170,7 @@ const sections: DocSection[] = [
         <p>
           The Service is not a bank, custodian of value, exchange, broker, or investment adviser,
           and nothing in it constitutes financial, legal, or tax advice. See the{' '}
-          <a href="risk" className="text-primary hover:underline">Risk Disclaimer</a> for a full
+          <a href="/risk" className="text-primary hover:underline">Risk Disclaimer</a> for a full
           statement of risks.
         </p>
       </>

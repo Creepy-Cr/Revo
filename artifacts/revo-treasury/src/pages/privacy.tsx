@@ -238,8 +238,8 @@ const sections: DocSection[] = [
       <p>
         Questions about this policy can be raised through the operator console. This document
         should be read together with the{' '}
-        <a href="terms" className="text-primary hover:underline">Terms of Service</a> and the{' '}
-        <a href="risk" className="text-primary hover:underline">Risk Disclaimer</a>.
+        <a href="/terms" className="text-primary hover:underline">Terms of Service</a> and the{' '}
+        <a href="/risk" className="text-primary hover:underline">Risk Disclaimer</a>.
       </p>
     ),
   },

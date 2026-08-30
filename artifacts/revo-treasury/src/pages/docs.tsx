@@ -92,7 +92,7 @@ const sections: DocSection[] = [
         />
         <p>
           Agent traffic is rate-limited and bounded. Responses are informational tooling, not
-          financial advice; the <a href="risk" className="text-primary hover:underline">Risk
+          financial advice; the <a href="/risk" className="text-primary hover:underline">Risk
           Disclaimer</a> covers the model's limits.
         </p>
       </>
