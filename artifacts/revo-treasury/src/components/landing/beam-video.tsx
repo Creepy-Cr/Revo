@@ -21,20 +21,60 @@ const PRE_FADE = 0.5;
 const SEEK_AT = 0.15;
 
 export function BeamVideo() {
-  const [show, setShow] = useState(false);
+  const [motionAllowed, setMotionAllowed] = useState(false);
+  const [loadVideo, setLoadVideo] = useState(false);
   const [dim, setDim] = useState(false);
   const ref = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setShow(!mq.matches);
+    const connection = (
+      navigator as Navigator & {
+        connection?: EventTarget & { saveData?: boolean };
+      }
+    ).connection;
+    const update = () => setMotionAllowed(!mq.matches && !connection?.saveData);
     update();
     mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
+    connection?.addEventListener('change', update);
+    return () => {
+      mq.removeEventListener('change', update);
+      connection?.removeEventListener('change', update);
+    };
   }, []);
 
   useEffect(() => {
-    if (!show) return;
+    if (!motionAllowed) {
+      setLoadVideo(false);
+      return;
+    }
+
+    let idleId: number | undefined;
+    let fallbackId: ReturnType<typeof globalThis.setTimeout> | undefined;
+
+    const scheduleVideo = () => {
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(() => setLoadVideo(true), { timeout: 2500 });
+      } else {
+        fallbackId = globalThis.setTimeout(() => setLoadVideo(true), 1200);
+      }
+    };
+
+    if (document.readyState === 'complete') {
+      scheduleVideo();
+    } else {
+      window.addEventListener('load', scheduleVideo, { once: true });
+    }
+
+    return () => {
+      window.removeEventListener('load', scheduleVideo);
+      if (idleId !== undefined) window.cancelIdleCallback(idleId);
+      if (fallbackId !== undefined) globalThis.clearTimeout(fallbackId);
+    };
+  }, [motionAllowed]);
+
+  useEffect(() => {
+    if (!loadVideo) return;
     const v = ref.current;
     if (!v) return;
 
@@ -65,21 +105,32 @@ export function BeamVideo() {
       v.removeEventListener('seeked', onSeeked);
       v.removeEventListener('ended', onEnded);
     };
-  }, [show]);
+  }, [loadVideo]);
 
-  if (!show) return null;
+  if (!loadVideo) return null;
 
   return (
     <video
       ref={ref}
       className={`beam-video${dim ? ' beam-video--dim' : ''}`}
-      src={`${import.meta.env.BASE_URL}videos/hero-beam.mp4`}
       autoPlay
       muted
       playsInline
-      preload="auto"
+      preload="none"
+      poster={`${import.meta.env.BASE_URL}videos/hero-beam-poster.webp`}
+      width="1280"
+      height="720"
       aria-hidden="true"
       data-testid="hero-beam-video"
-    />
+    >
+      <source
+        src={`${import.meta.env.BASE_URL}videos/hero-beam.webm`}
+        type="video/webm"
+      />
+      <source
+        src={`${import.meta.env.BASE_URL}videos/hero-beam.mp4`}
+        type="video/mp4"
+      />
+    </video>
   );
 }

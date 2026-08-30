@@ -1,3 +1,4 @@
 - [Artifact publish outputs](artifact-publish-outputs.md) — never exclude generated dist directories in .replitignore; publishing needs them after artifact builds.
 - [AI latency measurement](ai-latency-measurement.md) — benchmark the integrated model through the app route; declaration-only workspace packages are not standalone Node entrypoints.
+- [Browser timer typing](browser-timer-typing.md) — this web package includes Node timer types; type fallback handles from globalThis.setTimeout rather than assuming numbers.
 - [Prerender and SPA routing](prerender-spa-routing.md) — public static documents need exact rewrites; protected SPA routes need empty shells to avoid homepage hydration.
