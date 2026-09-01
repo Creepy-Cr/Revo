@@ -2,130 +2,66 @@ import { motion } from 'framer-motion';
 
 export function Scene2() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-[#050505] overflow-hidden">
-      <div className="texture-overlay" />
-      <div className="noise-overlay" />
+    <div className="absolute inset-0 bg-[#000000] text-white flex justify-center items-center overflow-hidden font-sans p-12">
+      <div className="w-full max-w-4xl bg-[#050505] border border-white/10 p-10 rounded-xl shadow-2xl relative">
 
-      {/* Grid Background */}
-      <div className="absolute inset-0" style={{
-        backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)`,
-        backgroundSize: '80px 80px'
-      }} />
-
-      <div className="relative z-10 w-full max-w-7xl px-12 grid grid-cols-12 gap-8 items-center">
-        {/* Left Column - Context */}
-        <div className="col-span-5 flex flex-col justify-center">
-          <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
-            className="text-primary font-mono text-sm tracking-[0.2em] uppercase mb-6 flex items-center gap-4"
-          >
-            <span className="w-8 h-px bg-primary/50"></span>
-            01 // Execution
-          </motion.div>
-
-          <motion.h2 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-            className="text-5xl font-display font-medium text-white leading-tight mb-6"
-          >
-            Write rules in <br/>
-            <span className="text-primary">natural language.</span>
-          </motion.h2>
-
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.8, delay: 0.8 }}
-            className="text-lg text-white/50 leading-relaxed font-sans max-w-md"
-          >
-            Arcus mechanically enforces your policy into structural rules.
-          </motion.p>
+        <div className="flex items-center justify-between mb-10 border-b border-white/10 pb-6">
+          <h3 className="text-sm font-mono tracking-[0.1em] text-muted-foreground uppercase flex items-center gap-3">
+            <span className="text-white/40">01 //</span> ACTIVE RULES
+          </h3>
+          <span className="font-mono text-sm font-medium uppercase tracking-[0.1em] text-white/50">
+            DRAFT PENDING REVIEW
+          </span>
         </div>
 
-        {/* Right Column - UI Mockup */}
-        <div className="col-span-7 relative">
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 1.2, delay: 1, ease: [0.16, 1, 0.3, 1] }}
-            className="glass-panel rounded-xl p-8 border border-white/10 shadow-2xl relative"
-          >
-            {/* Command Prompt */}
-            <div className="mb-8">
-              <h3 className="text-xs font-mono tracking-[0.1em] text-white/40 uppercase flex items-center gap-2 mb-4">
-                SYS // COMMAND PROMPT
-              </h3>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                  <span className="text-primary font-mono font-bold">{'>'}</span>
-                </div>
-                <div className="w-full bg-[#0a0a0a] border border-white/10 rounded-md py-4 pl-12 pr-4 text-sm font-mono text-white shadow-inner">
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.1, delay: 1.5 }}
-                  >
-                    Cap risk assets at 15%
-                  </motion.span>
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.1, delay: 1.8 }}
-                  >
-                    {" "}and rotate to stablecoins if drawdown exceeds 5%
-                  </motion.span>
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [1, 0, 1] }}
-                    transition={{ duration: 0.8, repeat: Infinity, delay: 2.2 }}
-                    className="inline-block w-2 h-4 bg-primary ml-1 align-middle"
-                  />
-                </div>
-              </div>
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8 }}
+          className="relative flex flex-col"
+        >
+          <div className="flex justify-between items-start mb-4">
+            <div className="font-display text-4xl text-white tracking-tight">Risk Capped Rebalance</div>
+            <div className="flex items-center gap-2 text-sm font-mono font-bold tracking-[0.1em] uppercase text-primary bg-primary/10 px-4 py-2 rounded-full border border-primary/20">
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              DRAFT
             </div>
+          </div>
+          <div className="text-xl text-white/60 mb-10 leading-relaxed font-sans">
+            Cap risk assets at 15% and rotate to stablecoins if drawdown exceeds 5%.
+          </div>
 
-            {/* Policy Output - staggered reveal */}
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              transition={{ duration: 0.8, delay: 2.8 }}
-              className="border-t border-white/10 pt-6 overflow-hidden"
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                <span className="text-xs font-mono text-primary font-bold tracking-widest uppercase">Draft Compiled</span>
-              </div>
-              
-              <div className="space-y-3">
-                {[
-                  { label: 'MAX PROTOCOL EXPOSURE', val: '15%' },
-                  { label: 'MIN STABLE RESERVE', val: '25%' },
-                  { label: 'MAX DRAWDOWN', val: '5%' },
-                  { label: 'RISK CEILING', val: 'low' }
-                ].map((r, i) => (
-                  <motion.div 
-                    key={r.label}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.5, delay: 3.2 + (i * 0.15) }}
-                    className="flex justify-between items-end gap-4 py-2 border-b border-white/[0.04]"
-                  >
-                    <div className="text-[10px] font-mono text-white/50 uppercase tracking-[0.1em]">{r.label}</div>
-                    <div className="flex-1 border-b border-dashed border-white/10 relative -top-1" />
-                    <div className="text-[11px] font-mono font-bold text-white uppercase tabular-nums">{r.val}</div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        </div>
+          <div className="flex flex-col gap-4 bg-[#0a0a0a] p-8 rounded-lg border border-white/5">
+            {[
+              { label: 'MAX PROTOCOL EXPOSURE', val: '15%' },
+              { label: 'MIN STABLE RESERVE', val: '25%' },
+              { label: 'MAX DRAWDOWN', val: '5%' },
+              { label: 'RISK CEILING', val: 'LOW' }
+            ].map((r, i) => (
+              <motion.div
+                key={r.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.5 + i * 0.15 }}
+                className="flex justify-between items-end gap-6 py-3 border-b border-white/[0.04] last:border-0"
+              >
+                <div className="text-sm font-mono text-white/50 uppercase tracking-[0.1em]">{r.label}</div>
+                <div className="flex-1 border-b border-dashed border-white/10 relative -top-2" />
+                <div className="text-xl font-mono font-bold text-white uppercase tabular-nums">{r.val}</div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 2.5, duration: 0.8 }}
+          className="absolute -right-8 -bottom-8 bg-primary/20 backdrop-blur-xl border border-primary/50 text-white p-6 rounded-lg shadow-[0_0_40px_rgba(252,59,0,0.3)] max-w-sm"
+        >
+          <div className="font-mono text-xs text-primary mb-2 uppercase tracking-widest font-bold">System Note</div>
+          <div className="text-lg leading-snug">Operator reviews the policy before any execution is permitted.</div>
+        </motion.div>
       </div>
     </div>
   );

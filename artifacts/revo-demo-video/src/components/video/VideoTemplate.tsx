@@ -18,11 +18,11 @@ import { Scene3 } from './video_scenes/Scene3';
 import { Scene4 } from './video_scenes/Scene4';
 
 export const SCENE_DURATIONS = {
-  opening: 5000,
-  problem: 5500,
-  arcus: 7000,
-  guardrails: 5000,
-  close: 6000,
+  opening: 9000,
+  problem: 11000,
+  arcus: 10000,
+  guardrails: 10000,
+  close: 10000,
 };
 
 const VIDEO_ASPECT_RATIO: VideoAspectRatio = '16:9';

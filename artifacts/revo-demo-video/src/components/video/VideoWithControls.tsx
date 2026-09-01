@@ -25,23 +25,23 @@ const SCENE_DETAILS: Record<
   { title: string; filePath: string }
 > = {
   opening: {
-    title: 'Revo Introduction',
+    title: 'Operator Access',
     filePath: 'src/components/video/video_scenes/Scene0.tsx',
   },
   problem: {
-    title: 'Treasury Challenge',
+    title: 'Arcus Command',
     filePath: 'src/components/video/video_scenes/Scene1.tsx',
   },
   arcus: {
-    title: 'Arcus Intelligence',
+    title: 'Policy Review',
     filePath: 'src/components/video/video_scenes/Scene2.tsx',
   },
   guardrails: {
-    title: 'Safety Guardrails',
+    title: 'Human Approval',
     filePath: 'src/components/video/video_scenes/Scene3.tsx',
   },
   close: {
-    title: 'Revo Closing',
+    title: 'Monitoring and Security',
     filePath: 'src/components/video/video_scenes/Scene4.tsx',
   },
 };
