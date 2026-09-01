@@ -2,3 +2,4 @@
 - [AI latency measurement](ai-latency-measurement.md) — benchmark the integrated model through the app route; declaration-only workspace packages are not standalone Node entrypoints.
 - [Browser timer typing](browser-timer-typing.md) — this web package includes Node timer types; type fallback handles from globalThis.setTimeout rather than assuming numbers.
 - [Prerender and SPA routing](prerender-spa-routing.md) — use flat public HTML plus slash/non-slash rewrites; protected routes need empty shells.
+- [Video artifact validation](video-artifact-validation.md) — validate recording and bundle with workflow env; scaffold typecheck may flag untouched browser runtime.

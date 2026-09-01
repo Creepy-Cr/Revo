@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "NWvjeyC7-4i6e3dp5ks2z"
+uri = "file://artifacts/revo-demo-video/public/audio/bg_music.mp3"
+type = "audio"
+title = "Revo demo background music"
+description = "Generated music: Dark cinematic electronic instrumental background music scoring a fintech AI treasury product demo. Low pulsing synth, restrained precision percussion, warm analog bass, subtle orche…"
