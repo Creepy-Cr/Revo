@@ -461,6 +461,7 @@ router.post("/treasury/wallet/deposits", requireOperator(), async (req, res): Pr
     "On-chain deposit received",
     `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} testnet USDC deposited from ${deposit.from} (verified on Arc Testnet, tx ${txHash.slice(0, 10)}…). Credited to the liquid reserve.`,
     "executed",
+    "onchain",
   );
   await auditSafe({
     treasuryId,
@@ -799,6 +800,7 @@ router.post("/treasury/wallet/withdrawals", requireOperator(), async (req, res):
     "On-chain withdrawal executed",
     `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} testnet USDC sent to ${address} on Arc Testnet (tx ${txHash.slice(0, 10)}…). Debited from the liquid reserve.`,
     "executed",
+    "onchain",
   );
   req.log.info({ txHash, amountUsdc, address }, "On-chain withdrawal confirmed");
   res.status(201).json(RequestTreasuryWithdrawalResponse.parse(serializeTransfer(confirmed)));

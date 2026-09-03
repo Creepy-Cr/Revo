@@ -329,6 +329,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WalletPosition"
+  /treasury/crosschain:
+    get:
+      operationId: getTreasuryCrosschainBalance
+      tags: [treasury]
+      summary: Read the treasury's Circle Gateway unified USDC balance across supported testnets
+      responses:
+        "200":
+          description: Unified balance reading, or an explicit unavailable result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrosschainBalance"
   /treasury/mode:
     get:
       operationId: getTreasuryMode
@@ -640,7 +652,7 @@ components:
           type: number
     AgentActivity:
       type: object
-      required: [id, time, title, detail, status]
+      required: [id, time, title, detail, status, kind]
       properties:
         id:
           type: string
@@ -652,6 +664,15 @@ components:
           type: string
         status:
           type: string
+        kind:
+          type: string
+          enum: [onchain, simulated, system]
+          description: >-
+            How this event relates to real money movement. "onchain" means a real
+            Arc Testnet transaction settled. "simulated" means internal accounting
+            only, with no protocol swap and no transaction. "system" means a
+            governance or control event that moves no funds. Consumers should use
+            this field rather than parsing the title.
     Guardrail:
       type: object
       required: [id, label, value, state]
@@ -904,6 +925,63 @@ components:
         faucetUrl:
           type: string
           description: Where to get Arc Testnet USDC
+    CrosschainBalance:
+      type: object
+      required: [address, token, source, available, deposited, chains, stale, checkedAt]
+      properties:
+        address:
+          type: string
+          description: Treasury custody wallet address this balance was read for
+        token:
+          type: string
+          description: Token the balance is denominated in
+        source:
+          type: string
+          description: Which Circle product produced the reading
+        available:
+          type: boolean
+          description: >-
+            False when Circle Gateway could not be read. chains is then empty and
+            totalConfirmed is absent - no figure is invented to fill the gap.
+        deposited:
+          type: boolean
+          description: >-
+            True when the treasury has confirmed USDC inside Circle Gateway. False means
+            nothing has been deposited into Gateway yet; it does NOT mean the treasury
+            holds no USDC on Arc.
+        totalConfirmed:
+          type: string
+          description: Total USDC confirmed in Circle Gateway across all chains, as a decimal string
+        chains:
+          type: array
+          description: Per-chain confirmed Gateway balance
+          items:
+            $ref: "#/components/schemas/CrosschainBalanceChain"
+        stale:
+          type: boolean
+          description: True when a refresh failed and a previous reading is being served
+        checkedAt:
+          type: string
+          format: date-time
+        error:
+          type: string
+          description: Why the reading is unavailable or stale
+    CrosschainBalanceChain:
+      type: object
+      required: [chain, label, confirmedBalance, isArc]
+      properties:
+        chain:
+          type: string
+          description: Circle App Kit chain identifier, for example Arc_Testnet
+        label:
+          type: string
+          description: Human-readable chain name
+        confirmedBalance:
+          type: string
+          description: Confirmed Gateway balance on this chain, as a decimal string
+        isArc:
+          type: boolean
+          description: True for Arc Testnet, the treasury's settlement chain
     OnchainTransfer:
       type: object
       required: [id, direction, wallet, amountUsdc, txHash, status, explorerTxUrl, createdAt, confirmedAt]

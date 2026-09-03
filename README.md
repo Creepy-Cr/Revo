@@ -10,7 +10,7 @@ An AI-managed DAO treasury command center on Arc Testnet. Deposit testnet USDC, 
 
 - **Natural-language governance**: type "keep at least 40% of the treasury liquid at all times" and Arcus compiles it into an enforced policy with a rebalance draft for your approval.
 - **Real on-chain custody**: per-treasury custody wallets on Arc Testnet with encrypted keys, deposit indexing, and signature-verified withdrawals.
-- **Multi-source signals**: market data, news, X, Discord sentiment, and whale-watch feeds fused into allocation signals.
+- **Multi-source signals**: market data, USDC peg deviation, crypto news, GitHub activity, and Arc whale-watch feeds fused into allocation signals. X and Discord sources are optional and stay dormant unless their tokens are configured.
 - **Hard guardrails**: max protocol exposure, minimum liquid reserve, emergency exit thresholds. The agent can propose, but never bypass approvals.
 - **Zero mock data**: every number in the console is computed from on-chain deposits and persisted state.
 
@@ -18,22 +18,32 @@ An AI-managed DAO treasury command center on Arc Testnet. Deposit testnet USDC, 
 
 | Layer    | Tech                                                          |
 | -------- | ------------------------------------------------------------- |
-| Frontend | React 18, Vite, Tailwind CSS v4, Recharts, Framer Motion      |
+| Frontend | React 19, Vite, Tailwind CSS v4, Recharts, Framer Motion      |
 | Backend  | Node.js, Express, Drizzle ORM, PostgreSQL                     |
 | Chain    | viem on Arc Testnet (chain id 5042002), USDC as native gas    |
 | AI       | Anthropic Claude (Opus) for the Arcus agent and strategy compiler |
 | Contract | OpenAPI spec as source of truth, generated client hooks and Zod schemas |
 
+## Architecture
+
+![Revo architecture](docs/architecture/revo-architecture.png)
+
+Full breakdown, including which flows are real on-chain transactions and which are
+internal accounting, is in [`docs/architecture/`](docs/architecture/README.md).
+
 ## Monorepo layout
 
 ```
 artifacts/
-  arc-treasury-dao/   # React frontend (landing + console)
+  revo-treasury/      # React frontend (landing + console)
   api-server/         # Express API (auth, custody, policies, signals, workers)
+  revo-demo-video/    # Animated product demo
 lib/
   api-spec/           # OpenAPI contract + codegen (orval)
   db/                 # Drizzle schema and migrations
 scripts/              # Maintenance and ops scripts
+docs/
+  architecture/       # System architecture diagram (SVG + PNG)
 ```
 
 ## Getting started
@@ -50,7 +60,7 @@ pnpm --filter @workspace/db run push
 pnpm --filter @workspace/api-server run dev
 
 # Run the frontend (needs PORT and BASE_PATH, e.g.)
-PORT=5173 BASE_PATH=/ pnpm --filter @workspace/arc-treasury-dao run dev
+PORT=5173 BASE_PATH=/ pnpm --filter @workspace/revo-treasury run dev
 ```
 
 ### Environment variables

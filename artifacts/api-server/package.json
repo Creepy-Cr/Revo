@@ -11,6 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@circle-fin/adapter-viem-v2": "^1.17.0",
+    "@circle-fin/app-kit": "^1.13.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-anthropic-ai": "workspace:*",

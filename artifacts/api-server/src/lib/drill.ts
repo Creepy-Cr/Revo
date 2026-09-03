@@ -11,6 +11,13 @@ import { randomUUID } from "node:crypto";
 
 export type DrillPhase = "idle" | "alert" | "proposal" | "rotating" | "secured";
 
+/**
+ * Structural mirror of ActivityKind in ./state, kept local so this simulation
+ * module stays self-contained. The two must stay identical; if they drift,
+ * applyDrillToDashboard stops accepting a real dashboard and typecheck fails.
+ */
+type ActivityKind = "onchain" | "simulated" | "system";
+
 const ALERT_END_MS = 3_000;
 const PROPOSAL_END_MS = 6_000;
 const ROTATION_END_MS = 12_000;
@@ -90,7 +97,14 @@ interface DashboardLike {
   network: string;
   allocations: AllocationLike[];
   portfolioHistory: { label: string; value: number }[];
-  activities: { id: string; time: string; title: string; detail: string; status: string }[];
+  activities: {
+    id: string;
+    time: string;
+    title: string;
+    detail: string;
+    status: string;
+    kind: ActivityKind;
+  }[];
   guardrails: { id: string; label: string; value: string; state: string }[];
 }
 
@@ -192,7 +206,16 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
   const iso = (offset: number) => new Date(start + offset).toISOString();
   const secured = elapsed >= ROTATION_END_MS;
 
-  const events: { id: string; time: string; title: string; detail: string; status: string }[] = [];
+  // Every drill event is theatre by definition: the overlay never touches the
+  // chain. They are all "simulated" so the console badges them as such.
+  const events: {
+    id: string;
+    time: string;
+    title: string;
+    detail: string;
+    status: string;
+    kind: ActivityKind;
+  }[] = [];
 
   events.push({
     id: "drill-alert",
@@ -201,6 +224,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
     detail:
       "Security feeds flag an active exploit draining the Arc lending vault. New deployments frozen instantly. (Simulated drill signal, no real event.)",
     status: "error",
+    kind: "simulated",
   });
 
   if (elapsed >= ALERT_END_MS) {
@@ -211,6 +235,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
       detail:
         "Risk score 88 breached the 'Emergency exit threshold (Risk 80+)' guardrail. Agent auto-drafted a rotation of all at-risk capital into the USDC safe reserve.",
       status: elapsed >= PROPOSAL_END_MS ? "executed" : "processing",
+      kind: "simulated",
     });
   }
 
@@ -222,6 +247,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
       detail:
         "Unwinding the aUSDC lending position and ETH sleeve into sUSDC/USDC inside the guarded testnet simulation.",
       status: secured ? "executed" : "processing",
+      kind: "simulated",
     });
   }
 
@@ -233,6 +259,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
       detail:
         "100% of at-risk capital now sits in the USDC safe reserve. Treasury holds in safe mode until the drill is reset.",
       status: "verified",
+      kind: "simulated",
     });
   }
 

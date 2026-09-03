@@ -30,3 +30,17 @@ mtime_ms = 1788285529061
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:bb9ee42f-dff7-461c-ba0c-d4a1a620aebd/dc7a25b7-caf3-4a55-bf31-e5a2386258af/5d371a08-bd7c-43f2-9526-a4cc96f20fab"
 storage_version_token = "1788285644583275"
 content_type = "video/mp4"
+
+[[outputs]]
+id = "bShVrBRDpIsmeKH5pnus5"
+uri = "file://docs/architecture/revo-architecture.png"
+type = "image"
+title = "Revo — System Architecture (corrected)"
+description = "Updated after review. Solid orange = real Arc Testnet transaction, dashed grey = internal accounting. Two factual corrections: the signal feeds are now shown as grounding Arcus answers only (they do not feed policy or the risk score), and the custody key claim is softened to scope-limited in-memory use rather than guaranteed erasure."
+logical_id = "fa0c497f-6afe-4872-9600-553158d8c656"
+content_hash = "sha256:3a816471553bc2fa0c953780301f3b3e7268e325c7d7783601d38c3df5dfcfc6"
+size = 563610
+mtime_ms = 1788469704563
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:bb9ee42f-dff7-461c-ba0c-d4a1a620aebd/fa0c497f-6afe-4872-9600-553158d8c656/70d3b82a-0948-465b-82db-17e0180a7c11"
+storage_version_token = "1788469781192903"
+content_type = "image/png"

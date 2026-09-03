@@ -78,7 +78,7 @@ export function Features() {
               </div>
               <h3 className="text-3xl md:text-4xl font-display font-medium text-white tracking-tight leading-tight">Natural Language to Validated Proposals</h3>
               <p className="text-muted-foreground text-lg leading-relaxed font-light">
-                No complex scripting required. Express your treasury strategy in plain English. Revo autonomously parses intent, backtests against testnet data, and compiles a fully structured governance proposal ready for DAO voting.
+                No complex scripting required. Express your treasury strategy in plain English. Revo compiles the intent into structured rules, then enforces them server-side on every proposal that follows.
               </p>
               <ul className="space-y-4 pt-4 text-sm font-mono text-muted-foreground leading-relaxed tabular-nums">
                 <li className="flex items-center gap-3"><span className="text-primary/70">›</span> Semantically parsed intent</li>

@@ -3,6 +3,7 @@ import healthRouter from "./health";
 import treasuryRouter from "./treasury";
 import chainRouter from "./chain";
 import treasuryWalletRouter from "./treasury-wallet";
+import treasuryCrosschainRouter from "./treasury-crosschain";
 import authRouter from "./auth";
 import securityRouter from "./security";
 
@@ -17,6 +18,7 @@ router.use(healthRouter);
 router.use(authRouter);
 router.use(securityRouter);
 router.use(treasuryWalletRouter);
+router.use(treasuryCrosschainRouter);
 router.use(treasuryRouter);
 router.use(chainRouter);
 

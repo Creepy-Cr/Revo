@@ -31,7 +31,17 @@ export const navSnapshotsTable = pgTable("nav_snapshots", {
 
 export type NavSnapshot = typeof navSnapshotsTable.$inferSelect;
 
-/** Append-only agent activity log driven by real events. */
+/**
+ * Append-only agent activity log driven by real events.
+ *
+ * `kind` makes the real-vs-simulated distinction machine-readable rather than
+ * something a reader has to infer from the wording of `title`:
+ *   - "onchain"   a real Arc Testnet transaction settled
+ *   - "simulated" internal accounting only; no protocol swap, no transaction
+ *   - "system"    governance/control event that moves no funds at all
+ *
+ * Defaults to "system" so a row can never accidentally claim to be on-chain.
+ */
 export const agentActivitiesTable = pgTable("agent_activities", {
   id: text("id").primaryKey(),
   treasuryId: text("treasury_id").notNull().default("main"),
@@ -39,6 +49,7 @@ export const agentActivitiesTable = pgTable("agent_activities", {
   title: text("title").notNull(),
   detail: text("detail").notNull(),
   status: text("status").notNull(),
+  kind: text("kind").notNull().default("system"),
 });
 
 export type AgentActivity = typeof agentActivitiesTable.$inferSelect;

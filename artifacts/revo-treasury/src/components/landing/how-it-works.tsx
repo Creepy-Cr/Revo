@@ -4,15 +4,15 @@ export function HowItWorks() {
   const steps = [
     {
       title: "Command & Context",
-      description: "Submit a natural-language strategy. Revo parses the intent and pulls real-time testnet market data, yields, and risk scores."
+      description: "Submit a natural-language strategy. Revo parses the intent and pulls live market data, USDC peg deviation, Arc whale flow, and risk scores."
     },
     {
       title: "Compile & Validate",
-      description: "Arcus, the treasury agent, drafts a sequence of smart contract calls, running them through internal simulated sandboxes against your DAO's guardrails."
+      description: "Arcus compiles the intent into an enforced policy. A deterministic engine — not the model — then drafts the rebalance and clamps it against your DAO's guardrails."
     },
     {
       title: "Queue Proposal",
-      description: "Revo never executes autonomously. It stages a validated governance proposal for the DAO to review, vote, and execute safely."
+      description: "In Managed mode every proposal waits for human approval; in Autonomous mode Revo acts only inside the active policy. Approving moves the simulated allocation — only deposits and withdrawals touch the chain."
     }
   ];
 

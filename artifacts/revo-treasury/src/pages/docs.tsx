@@ -111,7 +111,7 @@ const sections: DocSection[] = [
         <DocList
           items={[
             <>Approve/reject actions are atomic: concurrent decisions on the same proposal cannot double-execute.</>,
-            <>Execution applies the rebalance to treasury state and writes an activity record.</>,
+            <>Execution applies the rebalance to internal treasury accounting and writes an activity record. No protocol swap or on-chain transaction occurs — only deposits and withdrawals settle on Arc Testnet.</>,
             <>Every decision lands in the tamper-evident audit log with the acting wallet.</>,
           ]}
         />

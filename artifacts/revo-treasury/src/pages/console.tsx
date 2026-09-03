@@ -14,6 +14,7 @@ import { DrillControl } from '@/components/console/drill-control';
 import { Terminal, Sparkles, X } from 'lucide-react';
 import { MotionConfig, motion } from 'framer-motion';
 import { WalletPanel } from '@/components/console/wallet-panel';
+import { CrosschainPanel } from '@/components/console/crosschain-panel';
 import { TreasuryActivation } from '@/components/console/treasury-activation';
 import { WalletProvider } from '@/components/console/wallet-context';
 import { AuthProvider, useAuthContext } from '@/components/console/auth-context';
@@ -232,8 +233,9 @@ function ConsoleShell() {
                       )}
 
                       {activeView === 'wallet' && (
-                        <div className="max-w-2xl mx-auto w-full pt-4">
+                        <div className="max-w-2xl mx-auto w-full pt-4 flex flex-col gap-6">
                           <WalletPanel />
+                          <CrosschainPanel />
                         </div>
                       )}
 

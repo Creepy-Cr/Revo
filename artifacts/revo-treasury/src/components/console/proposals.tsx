@@ -31,10 +31,13 @@ export function Proposals() {
     }
     approve.mutate({ proposalId: id }, {
       onSuccess: () => {
-        toast({ title: 'Proposal Executed' });
+        toast({
+          title: 'Rebalance applied',
+          description: 'Simulated allocation change. No on-chain transaction was sent.',
+        });
         invalidate();
       },
-      onError: (err) => toast({ title: 'Execution Failed', description: apiErrorMessage(err), variant: 'destructive' })
+      onError: (err) => toast({ title: 'Rebalance failed', description: apiErrorMessage(err), variant: 'destructive' })
     });
   };
 

@@ -8,3 +8,7 @@
 - [Headless browser codecs](headless-browser-codecs.md) — the test browser has no H.264 and no GPU; keep a WebM fallback and distrust its dropped-frame counts.
 - [Arc hardfork response](arc-hardfork-response.md) — hardfork notices are node-operator-facing; this app is an RPC client, so probe the endpoints before changing any code.
 - [pnpm workspace comment loss](pnpm-workspace-comment-loss.md) — pnpm update strips every comment from pnpm-workspace.yaml; rebuild from HEAD, re-apply only real value changes.
+- [Workspace DOM lib gaps](workspace-dom-lib-gaps.md) — base tsconfig ships no DOM; a codegen bump can need dom.iterable and only breaks on the next regen.
+- [Dashboard response overlays](dashboard-response-overlays.md) — the drill overlay rewrites dashboard rows; a new required response field must be added there too or the route 503s.
+- [Circle Gateway vs wallet balance](circle-gateway-vs-wallet-balance.md) — unified balance reads a deposit contract, not wallets; zero never means the treasury is empty.
+- [Custody lock test contention](custody-lock-test-contention.md) — its 2s pool deadline flakes when test files are added; isolate and re-run before calling it a regression.

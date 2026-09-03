@@ -26,8 +26,8 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.3 }}
           className="text-lg md:text-xl text-white/85 max-w-2xl mb-12 leading-relaxed font-light tracking-tight [text-shadow:0_2px_20px_rgba(0,0,0,0.75),0_1px_4px_rgba(0,0,0,0.6)]"
         >
-          Arcus, the Revo treasury agent, translates natural-language strategies into validated testnet proposals. 
-          Operating under hard guardrails to protect protocol assets from exploitation.
+          Arcus, the Revo treasury agent, translates natural-language strategy into policy the server enforces.
+          Deposits and withdrawals settle on Arc Testnet, under hard guardrails.
         </motion.p>
 
         <motion.div

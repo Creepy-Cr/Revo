@@ -792,6 +792,7 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
       `Proposal "${stale.title}" cancelled`,
       "Its policy was superseded before execution, so the stale rebalance was withdrawn.",
       "observed",
+      "simulated",
     );
   }
 
@@ -808,6 +809,7 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
       "Auto-approved rebalance executed (simulated)",
       `Autonomous mode applied the "${activated.name}" targets: ${plan.action}`,
       "executed",
+      "simulated",
     );
   } else {
     await logActivity(
@@ -815,6 +817,7 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
       `Policy "${activated.name}" activated. Rebalance proposed`,
       "The engine drafted a rebalance to the policy targets. Approve it to execute the simulation.",
       "processing",
+      "simulated",
     );
   }
   if (proposalId) {
@@ -989,6 +992,7 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
       "Approved rebalance executed (simulated)",
       `Operator approved "${executed.title}". Applied: ${executed.action}`,
       "executed",
+      "simulated",
     );
   } else {
     await logActivity(
@@ -996,6 +1000,7 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
       `Proposal "${executed.title}" approved`,
       "Marked as executed in the simulation log. No allocation targets were attached.",
       "executed",
+      "simulated",
     );
   }
 

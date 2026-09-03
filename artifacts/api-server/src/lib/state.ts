@@ -31,11 +31,25 @@ export const GUARDRAILS = [
   { id: "g-4", label: "Execution environment", value: "Testnet only", state: "locked" },
 ];
 
+/**
+ * How an activity row relates to real money movement.
+ *   - "onchain"   a real Arc Testnet transaction settled
+ *   - "simulated" internal accounting only; no protocol swap, no transaction
+ *   - "system"    governance/control event that moves no funds at all
+ */
+export type ActivityKind = "onchain" | "simulated" | "system";
+
+/**
+ * `kind` defaults to "system" deliberately: understating is the safe failure
+ * direction, so a new call site that forgets to pass it can never falsely
+ * present itself as an on-chain settlement.
+ */
 export async function logActivity(
   treasuryId: string,
   title: string,
   detail: string,
   status: string,
+  kind: ActivityKind = "system",
 ): Promise<void> {
   await db.insert(agentActivitiesTable).values({
     id: `act-${randomUUID()}`,
@@ -44,6 +58,7 @@ export async function logActivity(
     title,
     detail,
     status,
+    kind,
   });
 }
 
@@ -125,7 +140,14 @@ export interface ComputedDashboard {
   network: string;
   allocations: { symbol: string; name: string; percentage: number; value: number; tone: string }[];
   portfolioHistory: { label: string; value: number }[];
-  activities: { id: string; time: string; title: string; detail: string; status: string }[];
+  activities: {
+    id: string;
+    time: string;
+    title: string;
+    detail: string;
+    status: string;
+    kind: ActivityKind;
+  }[];
   guardrails: { id: string; label: string; value: string; state: string }[];
 }
 
@@ -233,6 +255,7 @@ export async function computeDashboard(
       title: row.title,
       detail: row.detail,
       status: row.status,
+      kind: row.kind as ActivityKind,
     })),
     guardrails: GUARDRAILS,
   };

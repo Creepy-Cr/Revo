@@ -182,6 +182,7 @@ async function processTreasury(treasuryId: string, signal: AbortSignal): Promise
         "On-chain deposit received",
         `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} testnet USDC deposited from ${sender} (auto-indexed on Arc Testnet, tx ${txHash.slice(0, 10)}…). Credited to the liquid reserve.`,
         "executed",
+        "onchain",
       );
       assertWorkerLease(signal);
       await auditSafe({
