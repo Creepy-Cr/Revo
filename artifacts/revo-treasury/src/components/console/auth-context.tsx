@@ -18,7 +18,7 @@ import { trackEvent } from '@/lib/analytics';
 type AuthContextType = {
   session: AuthSession | null;
   isLoading: boolean;
-  signIn: () => Promise<void>;
+  signIn: () => Promise<boolean>;
   signOut: () => Promise<void>;
   isSigningIn: boolean;
 };
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async () => {
     if (!wallet.address || !info) {
       toast({ title: 'Connect wallet first', variant: 'destructive' });
-      return;
+      return false;
     }
 
     try {
@@ -75,12 +75,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: getGetAuthSessionQueryKey() });
       trackEvent('wallet_authenticated', { role: verifiedSession.role });
       toast({ title: 'Signed in successfully' });
+      return true;
     } catch (error) {
       toast({
         title: 'Sign in failed',
         description: apiErrorMessage(error, 'Could not complete sign in.'),
         variant: 'destructive',
       });
+      return false;
     }
   }, [wallet.address, info, requestNonce, verifySig, queryClient, toast]);
 

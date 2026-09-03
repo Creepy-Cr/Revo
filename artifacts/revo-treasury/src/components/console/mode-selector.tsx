@@ -3,7 +3,7 @@ import { useSetTreasuryMode, getGetTreasuryModeQueryKey, getGetTreasuryDashboard
 import { ShieldOff, UserCheck, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from './auth-context';
-import { apiErrorMessage } from '@/lib/api-error';
+import { apiErrorCode, apiErrorMessage } from '@/lib/api-error';
 
 const MODES = [
   { value: 'safe', label: 'Safe', icon: ShieldOff },
@@ -14,23 +14,54 @@ const MODES = [
 export function ModeSelector({ current }: { current?: string }) {
   const queryClient = useQueryClient();
   const setMode = useSetTreasuryMode();
-  const { session } = useAuthContext();
+  const { session, signIn, isSigningIn } = useAuthContext();
   const { toast } = useToast();
 
-  const handleSelect = (mode: string) => {
+  const applyMode = async (mode: string) => {
+    await setMode.mutateAsync({ data: { mode: mode as OperatingModeUpdateMode } });
+    toast({ title: `Mode Switched: ${mode.toUpperCase()}` });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: getGetTreasuryModeQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetTreasuryDashboardQueryKey() }),
+    ]);
+  };
+
+  const handleSelect = async (mode: string) => {
     if (!session) {
       toast({ title: 'Sign in to act', description: 'You must be signed in to change operating modes.', variant: 'destructive' });
       return;
     }
-    if (mode === current || setMode.isPending) return;
-    setMode.mutate({ data: { mode: mode as OperatingModeUpdateMode } }, {
-      onSuccess: () => {
-        toast({ title: `Mode Switched: ${mode.toUpperCase()}` });
-        queryClient.invalidateQueries({ queryKey: getGetTreasuryModeQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetTreasuryDashboardQueryKey() });
-      },
-      onError: (err) => toast({ title: 'Mode Switch Failed', description: apiErrorMessage(err), variant: 'destructive' })
-    });
+    if (mode === current || setMode.isPending || isSigningIn) return;
+
+    try {
+      await applyMode(mode);
+    } catch (error) {
+      if (mode === 'autonomous' && apiErrorCode(error) === 'stale_session') {
+        toast({
+          title: 'Fresh signature required',
+          description: 'Confirm the wallet message to enable Auto-execute. This uses no gas and sends no transaction.',
+        });
+        const reauthenticated = await signIn();
+        if (!reauthenticated) return;
+
+        try {
+          await applyMode(mode);
+        } catch (retryError) {
+          toast({
+            title: 'Mode Switch Failed',
+            description: apiErrorMessage(retryError),
+            variant: 'destructive',
+          });
+        }
+        return;
+      }
+
+      toast({
+        title: 'Mode Switch Failed',
+        description: apiErrorMessage(error),
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -42,8 +73,9 @@ export function ModeSelector({ current }: { current?: string }) {
         return (
           <button
             key={m.value}
-            onClick={() => handleSelect(m.value)}
-            disabled={setMode.isPending}
+            onClick={() => void handleSelect(m.value)}
+            disabled={setMode.isPending || isSigningIn}
+            aria-busy={setMode.isPending || isSigningIn}
             title={m.value === 'autonomous' ? 'auto-executes in-policy proposals on approval' : m.label}
             className={`relative flex-1 py-2.5 px-2 md:px-0 flex flex-col items-center justify-center gap-1 transition-colors duration-200 group ${
               active ? 'bg-white/[0.05] text-white' : 'text-muted-foreground hover:text-white/70 hover:bg-white/[0.02]'
