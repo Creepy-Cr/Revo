@@ -230,15 +230,23 @@
   object-fit: cover;
   object-position: center top;
   mix-blend-mode: screen;
-  opacity: 0.62;
-  transition: opacity 0.45s ease-in-out;
+  /* Held at 0 until the first frame is decoded, then eased up by
+     .beam-video--ready, so the beam rises into the hero instead of
+     snapping on part-way through the page settling. */
+  opacity: 0;
+  transition: opacity 1.1s ease-out;
   -webkit-mask-image: linear-gradient(to bottom, black 0%, black 86%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 0%, black 86%, transparent 100%);
 }
 
-/* Brief dip that masks the loop seek - reads as the light "breathing" */
-.beam-video--dim {
-  opacity: 0.4;
+.beam-video--ready {
+  opacity: 0.62;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beam-video {
+    transition: none;
+  }
 }
 
 /* Soft dark pool behind the hero copy so text stays readable over the beam */

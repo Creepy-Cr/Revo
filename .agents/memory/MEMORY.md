@@ -4,3 +4,5 @@
 - [Prerender and SPA routing](prerender-spa-routing.md) — use flat public HTML plus slash/non-slash rewrites; protected routes need empty shells.
 - [Replit preview origin guard](replit-preview-origin-guard.md) — validate and trust Replit preview hostnames in development; browser origins are not localhost.
 - [Video artifact validation](video-artifact-validation.md) — validate with workflow env; explicit MP4 requests require a rendered file, not preview-only export.
+- [Looping hero video](looping-hero-video.md) — a mid-clip loop point must sit on a keyframe and crossfade closed, or every loop re-decodes and stutters.
+- [Headless browser codecs](headless-browser-codecs.md) — the test browser has no H.264 and no GPU; keep a WebM fallback and distrust its dropped-frame counts.
