@@ -1,0 +1,151 @@
+ETHOnline 2026
+Overview
+Dashboard
+Project
+Team
+Mentors
+Info
+Arc logo
+Arc
+$10,000
+
+arc.network
+arc
+About
+Arc is the purpose-built L1 blockchain from Circle, EVM-compatible, and serves as the Economic OS for the internet — powering the programmable trust layer and transaction engine where capital, humans, and machines coordinate to drive real economic growth. Arc enables builders and issuers worldwide to power the next era of onchain lending, capital markets, FX, and payments - igniting liquidity across currencies and asset classes.
+
+Prizes
+🏆 Best DeFi/Onchain Finance Application ⸺ $1,667
+Build stablecoin-native DeFi on Arc.
+Build lending, borrowing, swaps, liquidity, FX, yield, payments, treasury or fintech infrastructure using Arc and USDC.
+
+What we're looking for:
+
+Meaningful use of Arc and USDC
+Advanced programmable money flows such as conditional payments, onchain automation or multi-step settlement
+Payment, liquidity or treasury workflows using App Kits where relevant
+Applications that show why stablecoin-native infrastructure changes what is possible
+Core products: Arc, USDC, App Kits, Circle Wallets, Circle Contracts, CCTP, Gateway, StableFX.
+
+Qualification Requirements
+Submissions will be evaluated based on the following parameters. Please be clear what bounty you are submitting for as a part of your submission!
+
+Functional MVP and diagram: Projects must demonstrate a working frontend and backend plus an architecture diagram.
+Video demonstration + presentation: succinctly outlining the project's core functions and its effective use of Circle's Developer tools/tech is required, supported by detailed documentation.
+Link to GitHub/Replit repo
+🏆 Best Agentic Economy Application with Circle Agent Stack ⸺ $1,667
+Build autonomous agents that transact on Arc.
+Build AI agents that hold wallets, make payments, manage risk, settle jobs or transact with other agents using USDC.
+
+What we're looking for:
+
+Agents with clear decision logic tied to real signals
+Autonomous spending, payments or settlement flows using USDC
+Use of Agent Stack to connect agents to wallets, USDC payments and onchain actions
+Use of Nanopayments, Paymaster or App Kits where relevant for agent-to-agent or service payments
+Core products: Arc, USDC, Agent Stack, App Kits, Circle Wallets, Circle Contracts, Nanopayments, Paymaster.
+
+Qualification Requirements
+Submissions will be evaluated based on the following parameters. Please be clear what bounty you are submitting for as a part of your submission!
+
+Functional MVP and diagram:
+
+Projects must demonstrate a working frontend and backend plus an architecture diagram.
+Video demonstration + presentation: Succinctly outlining the project's core functions and its effective use of - Circle's Developer tools/tech is required, supported by detailed documentation.
+Link to GitHub/Replit repo
+🏆 Best DeFi or Agentic Application ⸺ $1,666
+🆕  This prize is only available to Continuity Track participants →
+Build stablecoin-native DeFi on Arc.
+Build lending, borrowing, swaps, liquidity, FX, yield, payments, treasury or fintech infrastructure using Arc and USDC.
+
+What we're looking for:
+
+Meaningful use of Arc and USDC
+Advanced programmable money flows such as conditional payments, onchain automation or multi-step settlement
+Payment, liquidity or treasury workflows using App Kits where relevant
+Applications that show why stablecoin-native infrastructure changes what is possible
+Core products: Arc, USDC, App Kits, Circle Wallets, Circle Contracts, CCTP, Gateway, StableFX.
+
+Build autonomous agents that transact on Arc.
+Build AI agents that hold wallets, make payments, manage risk, settle jobs or transact with other agents using USDC.
+
+What we're looking for:
+
+Agents with clear decision logic tied to real signals
+Autonomous spending, payments or settlement flows using USDC
+Use of Agent Stack to connect agents to wallets, USDC payments and onchain actions
+Use of Nanopayments, Paymaster or App Kits where relevant for agent-to-agent or service payments
+Core products: Arc, USDC, Agent Stack, App Kits, Circle Wallets, Circle Contracts, Nanopayments, Paymaster.
+
+Qualification Requirements
+Submissions will be evaluated based on the following parameters. Please be clear what bounty you are submitting for as a part of your submission!
+
+Functional MVP and diagram:
+
+Projects must demonstrate a working frontend and backend plus an architecture diagram.
+Video demonstration + presentation: Succinctly outlining the project's core functions and its effective use of - Circle's Developer tools/tech is required, supported by detailed documentation.
+Link to GitHub/Replit repo
+Be registered as a Continuity Project, under the Continuity Track
+🏆 Launch on Arc Testnet & Push to Mainnet ⸺ $3,500
+🥇
+1st place
+$2,500
+🥈
+2nd place
+$1,000
+Add a working Arc integration. The goal isn't just to prototype: we want to see projects that are ready to ship to mainnet!
+
+What We're Looking For:
+
+USDC or EURC payment flows on Arc added to a commerce, fintech, or wallet product
+Crosschain transfers or unified balance integrated into a production project, with Arc as the core settlement layer
+Agentic payments shipped into an AI agent or API monetization tool
+Stablecoin settlement or escrow logic on Arc added to a DeFi protocol or marketplace
+Arc-powered treasury or FX features built into a multi-chain product
+Qualification Requirements
+Submissions will be evaluated based on the following parameters.
+
+Please be clear which track you are submitting for as part of your submission.
+
+Functional MVP and Diagram
+Projects must demonstrate a working frontend and backend plus an architecture diagram.
+Video demonstration + presentation: succinctly outline the project's core functions and its effective use of Circle's developer tools, supported by detailed documentation.
+Link to GitHub/Replit repo
+Projects must be deployed or deployment-ready on Arc mainnet by September 30.
+
+🏆 Launch on Arc Testnet & Push to Mainnet ⸺ $1,500
+🆕  This prize is only available to Continuity Track participants →
+Already building?
+Take a project you own — an existing MVP, open source repo, or live product — and add a working Arc integration. The goal isn't just to prototype: we want to see projects that are ready to ship to mainnet!
+
+What We're Looking For:
+
+USDC or EURC payment flows on Arc added to an existing commerce, fintech, or wallet product
+Crosschain transfers or unified balance integrated into a production project, with Arc as the core settlement layer
+Agentic payments shipped into an existing AI agent or API monetization tool
+Stablecoin settlement or escrow logic on Arc added to an existing DeFi protocol or marketplace
+Arc-powered treasury or FX features built into a live multi-chain product
+Qualification Requirements
+Submissions will be evaluated based on the following parameters.
+
+Please be clear which track you are submitting for as part of your submission.
+
+Functional MVP and Diagram
+Projects must demonstrate a working frontend and backend plus an architecture diagram.
+Video demonstration + presentation: succinctly outline the project's core functions and its effective use of Circle's developer tools, supported by detailed documentation.
+Link to GitHub/Replit repo
+Projects must be deployed or deployment-ready on Arc mainnet by September 30.
+
+Resources
+Arc Docs
+https://docs.arc.io/
+↗
+App Kits
+https://docs.arc.io/app-kit
+↗
+Circle Dev Docs
+https://developers.circle.com/
+↗
+Agent Stack Starter Kit
+https://github.com/circlefin/agent-stack-starter-kits
+↗

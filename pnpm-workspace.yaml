@@ -42,27 +42,27 @@ packages:
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.21
-  '@replit/vite-plugin-dev-banner': ^0.1.1
+  '@replit/vite-plugin-dev-banner': ^0.1.2
   '@replit/vite-plugin-runtime-error-modal': ^0.0.6
-  '@tailwindcss/vite': ^4.1.14
-  '@tanstack/react-query': ^5.90.21
-  '@types/node': ^25.3.3
-  '@types/react': ^19.2.0
-  '@types/react-dom': ^19.2.0
-  '@vitejs/plugin-react': ^5.0.4
+  '@tailwindcss/vite': ^4.3.3
+  '@tanstack/react-query': ^5.102.8
+  '@types/node': ^25.9.5
+  '@types/react': ^19.2.18
+  '@types/react-dom': ^19.2.5
+  '@vitejs/plugin-react': ^5.2.0
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   drizzle-orm: ^0.45.2
-  framer-motion: ^12.23.24
+  framer-motion: ^12.43.0
   lucide-react: ^0.545.0
   # Must be this exact version because expo requires it
   react: 19.1.0
   # Must be this exact version because expo requires it
   react-dom: 19.1.0
-  tailwind-merge: ^3.3.1
-  tailwindcss: ^4.1.14
-  tsx: ^4.21.0
-  vite: ^7.3.2
+  tailwind-merge: ^3.6.0
+  tailwindcss: ^4.3.3
+  tsx: ^4.23.13
+  vite: ^7.3.6
   wouter: ^3.3.5
   zod: ^3.25.76
 
@@ -159,6 +159,11 @@ overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   brace-expansion: "5.0.9"
   esbuild: "0.28.2"
-  fast-uri: "3.1.5"
+  # Pinned to the first PATCHED release. 3.1.5 carried 4 high-severity advisories
+  # (SSRF via malformed IPv6 normalization and via repeated hostname percent-decoding,
+  # plus host confusion via skipped IDN canonicalization and percent-encoded scheme
+  # normalization). Reached only through the dev-time codegen chain
+  # orval > @scalar/openapi-parser > ajv > fast-uri. Do not lower below 3.1.6.
+  fast-uri: "3.1.6"
   js-yaml: "4.3.1"
   nanoid: "3.3.18"
