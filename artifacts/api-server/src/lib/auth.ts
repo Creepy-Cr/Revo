@@ -42,34 +42,45 @@ function isProd(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+function addHttpOrigins(origins: Set<string>, rawValue: string | undefined): void {
+  for (const raw of (rawValue ?? "").split(",")) {
+    const trimmed = raw.trim().replace(/\/$/, "");
+    try {
+      if (!trimmed) continue;
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        origins.add(parsed.origin);
+      }
+    } catch {
+      // Invalid configured origins are ignored rather than weakening CORS.
+    }
+  }
+}
+
+function addReplitDomainOrigins(origins: Set<string>, rawValue: string | undefined): void {
+  for (const raw of (rawValue ?? "").split(",")) {
+    const domain = raw.trim().toLowerCase().replace(/\.$/, "");
+    if (
+      domain &&
+      domain.length <= 253 &&
+      !domain.includes("/") &&
+      /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d{1,5})?$/.test(domain)
+    ) {
+      origins.add(`https://${domain}`);
+    }
+  }
+}
+
 /**
  * Browser origins allowed to talk to this API with credentials. Loaded from
  * APP_ORIGINS (comma-separated). Wildcard origins are never used with cookies.
  */
 export function allowedOrigins(): string[] {
   const origins = new Set<string>();
-  for (const raw of (process.env.APP_ORIGINS ?? "").split(",")) {
-    const trimmed = raw.trim().replace(/\/$/, "");
-    try {
-      if (trimmed) origins.add(new URL(trimmed).origin);
-    } catch {
-      // Invalid configured origins are ignored rather than weakening CORS.
-    }
-  }
-  if (isProd()) {
-    for (const raw of (process.env.REPLIT_DOMAINS ?? "").split(",")) {
-      const domain = raw.trim().toLowerCase().replace(/\.$/, "");
-      if (
-        domain &&
-        domain.length <= 253 &&
-        !domain.includes("/") &&
-        /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d{1,5})?$/.test(domain)
-      ) {
-        origins.add(`https://${domain}`);
-      }
-    }
-  }
+  addHttpOrigins(origins, process.env.APP_ORIGINS);
+  addReplitDomainOrigins(origins, process.env.REPLIT_DOMAINS);
   if (!isProd()) {
+    addReplitDomainOrigins(origins, process.env.REPLIT_DEV_DOMAIN);
     origins.add("http://localhost");
     origins.add("http://127.0.0.1");
     origins.add("http://localhost:5173");
