@@ -31,7 +31,15 @@ interface DrawdownCheckpoint {
   breachedPolicyId: string | null;
 }
 
-async function processTreasury(treasuryId: string, signal: AbortSignal): Promise<string | void> {
+/**
+ * One treasury's check. Exported as the unit under test: driving the whole
+ * job loop from a test would process every treasury in the database, and its
+ * failure handling writes durable alerts against whichever treasury it was on.
+ */
+export async function processTreasury(
+  treasuryId: string,
+  signal: AbortSignal,
+): Promise<string | void> {
   const [policy] = await db
     .select()
     .from(policiesTable)
