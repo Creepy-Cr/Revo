@@ -1,17 +1,22 @@
 import { doublePrecision, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
- * Persistent treasury simulation state. Holdings are stored as units, not
- * dollar values - valuations are computed at read time from live market
- * prices so the NAV genuinely moves with the market.
+ * Persistent treasury state.
+ *
+ * Composition is read from the custody wallet on Arc, so this row is not the
+ * treasury's holdings. `usdcUnits` is the deposit ledger - what confirmed
+ * on-chain transfers say the treasury was credited - and it is only rendered
+ * when Arc cannot be read. `lastUsdcPrice` is the last real quote, kept so a
+ * degraded read still prices that fallback at a price that once existed.
+ *
+ * Columns for assets the treasury cannot hold on Arc (aUSDC, sUSDC, ETH) used
+ * to live here at a permanent zero, alongside a stored ETH price nothing read.
+ * They are gone: a column that describes a position no wallet can hold will be
+ * read as a position by anyone inspecting this table.
  */
 export const treasuryStateTable = pgTable("treasury_state", {
   id: text("id").primaryKey(),
   usdcUnits: doublePrecision("usdc_units").notNull(),
-  aUsdcUnits: doublePrecision("a_usdc_units").notNull(),
-  sUsdcUnits: doublePrecision("s_usdc_units").notNull(),
-  ethUnits: doublePrecision("eth_units").notNull(),
-  lastEthPrice: doublePrecision("last_eth_price").notNull(),
   lastUsdcPrice: doublePrecision("last_usdc_price").notNull(),
   status: text("status").notNull(),
   network: text("network").notNull(),

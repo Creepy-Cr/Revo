@@ -93,17 +93,13 @@ async function initializeState(
   // Real mode: the treasury opens EMPTY. Holdings only ever change through
   // real on-chain testnet USDC deposits/withdrawals (wallet routes) and
   // approved rebalances of those funds. The live quote is still required so
-  // the stored last-known prices are real from the very first row.
+  // the stored last-known USDC price is real from the very first row.
   signal?.throwIfAborted();
   const [state] = await db
     .insert(treasuryStateTable)
     .values({
       id: treasuryId,
       usdcUnits: 0,
-      aUsdcUnits: 0,
-      sUsdcUnits: 0,
-      ethUnits: 0,
-      lastEthPrice: quote.ethUsd,
       lastUsdcPrice: quote.usdcUsd,
       status: "AUTONOMOUS",
       network: "Arc Testnet",
@@ -210,7 +206,7 @@ export async function computeDashboard(
     signal?.throwIfAborted();
     await db
       .update(treasuryStateTable)
-      .set({ lastEthPrice: quote.ethUsd, lastUsdcPrice: quote.usdcUsd, updatedAt: new Date() })
+      .set({ lastUsdcPrice: quote.usdcUsd, updatedAt: new Date() })
       .where(eq(treasuryStateTable.id, treasuryId));
   }
 
@@ -393,10 +389,11 @@ const REBALANCE_SYMBOLS = tradableTokens().map((t) => t.symbol);
 /**
  * Records an approved rebalance target.
  *
- * This used to rewrite four unit columns so the dashboard would show the new
+ * This used to rewrite stored unit columns so the dashboard would show the new
  * split instantly. That was the simulation: no asset moved, and the numbers
  * were the only thing that changed. Composition is now read from the custody
- * wallet, so holdings shift when - and only when - a swap settles on chain.
+ * wallet, so holdings shift when - and only when - a swap settles on chain,
+ * and those columns no longer exist.
  *
  * What remains here is validation and the price mark. The approved target is
  * carried by the proposal record itself; this call refuses targets Revo could
@@ -435,13 +432,12 @@ export async function applyRebalance(
   if (!state) {
     throw new Error("Treasury state is not initialized; cannot rebalance");
   }
-  // Mark the book at the prices the approval was judged against. Unit columns
-  // are deliberately untouched: the treasury's composition lives on chain and
-  // only a settled swap may move it.
+  // Mark the book at the USDC price the approval was judged against. No
+  // composition is written here at all: the treasury's holdings live on chain
+  // and only a settled swap may move them.
   await executor
     .update(treasuryStateTable)
     .set({
-      lastEthPrice: quote?.ethUsd ?? state.lastEthPrice,
       lastUsdcPrice: quote?.usdcUsd ?? state.lastUsdcPrice,
       updatedAt: new Date(),
     })

@@ -29,8 +29,6 @@ vi.mock("./discord-sentiment", () => ({ fetchDiscordSentiment: vi.fn() }));
 const REGISTRY_SYMBOLS = Object.keys(ARC_TOKENS);
 
 const QUOTE: MarketQuote = {
-  ethUsd: 3_000,
-  ethChange24h: 1.5,
   usdcUsd: 0.9999,
   btcUsd: 80_000,
   btcChange24h: 2.4,

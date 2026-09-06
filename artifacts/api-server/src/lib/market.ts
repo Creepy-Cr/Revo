@@ -8,8 +8,6 @@
  */
 
 export interface MarketQuote {
-  ethUsd: number;
-  ethChange24h: number;
   usdcUsd: number;
   /**
    * Real-world BTC price. It sanity checks cirBTC swap quotes against a market
@@ -34,8 +32,11 @@ export interface MarketQuote {
 }
 
 const CACHE_TTL_MS = 60_000;
+// Only the ids something actually prices: the treasury holds USDC, EURC and
+// cirBTC on Arc and nothing else. ETH was quoted here for a stored price no
+// reader ever consumed, so it is no longer asked for.
 const ENDPOINT =
-  "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,usd-coin,bitcoin,euro-coin&vs_currencies=usd&include_24hr_change=true";
+  "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin,bitcoin,euro-coin&vs_currencies=usd&include_24hr_change=true";
 
 /** CoinGecko id to the `MarketQuote` field carrying its USD price. */
 export function referencePriceFor(coingeckoId: string, quote: MarketQuote | null): number | undefined {
@@ -43,8 +44,6 @@ export function referencePriceFor(coingeckoId: string, quote: MarketQuote | null
   switch (coingeckoId) {
     case "usd-coin":
       return quote.usdcUsd;
-    case "ethereum":
-      return quote.ethUsd;
     case "bitcoin":
       return quote.btcUsd;
     case "euro-coin":
@@ -70,21 +69,16 @@ export async function getMarketQuote(): Promise<MarketQuote | null> {
       throw new Error(`CoinGecko responded ${res.status}`);
     }
     const json = (await res.json()) as {
-      ethereum?: { usd?: number; usd_24h_change?: number };
       "usd-coin"?: { usd?: number };
       bitcoin?: { usd?: number; usd_24h_change?: number };
       "euro-coin"?: { usd?: number; usd_24h_change?: number };
     };
 
-    const ethUsd = json.ethereum?.usd;
-    const ethChange24h = json.ethereum?.usd_24h_change;
     const usdcUsd = json["usd-coin"]?.usd;
 
-    if (
-      typeof ethUsd !== "number" ||
-      typeof ethChange24h !== "number" ||
-      typeof usdcUsd !== "number"
-    ) {
+    // USDC is the only required id: it prices the liquid reserve and the
+    // deposit-ledger fallback, so a quote without it is not a usable quote.
+    if (typeof usdcUsd !== "number") {
       throw new Error("CoinGecko returned an incomplete quote");
     }
 
@@ -94,8 +88,6 @@ export async function getMarketQuote(): Promise<MarketQuote | null> {
     const eurChange24h = json["euro-coin"]?.usd_24h_change;
 
     cache = {
-      ethUsd,
-      ethChange24h,
       usdcUsd,
       ...(typeof btcUsd === "number" ? { btcUsd } : {}),
       ...(typeof btcChange24h === "number" ? { btcChange24h } : {}),

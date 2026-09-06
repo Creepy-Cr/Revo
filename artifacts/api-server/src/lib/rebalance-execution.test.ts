@@ -56,7 +56,7 @@ const { ChainError } = await import("./arc-chain");
 
 const TREASURY = "t-1";
 /** USDC at 1.00, EURC at 1.16. */
-const QUOTE = { usdcUsd: 1, eurUsd: 1.16, ethUsd: 3000 } as MarketQuote;
+const QUOTE = { usdcUsd: 1, eurUsd: 1.16 } as MarketQuote;
 
 /** 60/40 split by USD value, with the whole book priceable. */
 function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
@@ -322,7 +322,6 @@ describe("settleRebalance", () => {
     const outcome = await settleRebalance(TREASURY, TARGETS, {
       usdcUsd: 1,
       eurUsd: 1.16,
-      ethUsd: 3000,
     } as MarketQuote);
 
     expect(outcome.kind).toBe("refused");

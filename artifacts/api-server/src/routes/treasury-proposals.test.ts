@@ -78,8 +78,6 @@ vi.mock("../lib/market", async (importOriginal) => {
   return {
     ...actual,
     getMarketQuote: vi.fn(async () => ({
-      ethUsd: 3_000,
-      ethChange24h: 0,
       usdcUsd: 1,
       eurUsd: 1.16,
       eurChange24h: 0,
@@ -273,10 +271,6 @@ beforeAll(async () => {
   await db.insert(treasuryStateTable).values({
     id: TEST_TREASURY_ID,
     usdcUnits: HELD_USDC,
-    aUsdcUnits: 0,
-    sUsdcUnits: 0,
-    ethUnits: 0,
-    lastEthPrice: 3_000,
     lastUsdcPrice: 1,
     status: "Active",
     network: "Arc Testnet",

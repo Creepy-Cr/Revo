@@ -74,8 +74,6 @@ const REFERENCE_NAV = 800;
 /** A complete CoinGecko poll: every pinned token has a reference price. */
 function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
   return {
-    ethUsd: 3000,
-    ethChange24h: 0,
     usdcUsd: 1,
     btcUsd: 80_000,
     eurUsd: 1.16,
@@ -99,10 +97,6 @@ async function seedTreasury(): Promise<string> {
   await db.insert(treasuryStateTable).values({
     id,
     usdcUnits: LEDGER_USDC,
-    aUsdcUnits: 0,
-    sUsdcUnits: 0,
-    ethUnits: 0,
-    lastEthPrice: 3000,
     lastUsdcPrice: 1,
     status: "AUTONOMOUS",
     network: "Arc Testnet",

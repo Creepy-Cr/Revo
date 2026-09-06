@@ -155,10 +155,6 @@ beforeAll(async () => {
   await db.insert(treasuryStateTable).values({
     id: TEST_TREASURY_ID,
     usdcUnits: INITIAL_USDC_UNITS,
-    aUsdcUnits: 0,
-    sUsdcUnits: 0,
-    ethUnits: 0,
-    lastEthPrice: 0,
     lastUsdcPrice: 1,
     status: "Active",
     network: "Arc Testnet",
