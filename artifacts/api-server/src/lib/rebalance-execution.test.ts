@@ -17,6 +17,7 @@ const simulateCustodyCall = vi.fn();
 const signCustodyCall = vi.fn();
 const broadcastSignedTransfer = vi.fn();
 const confirmTransfer = vi.fn();
+const getConfirmedReceipt = vi.fn();
 const gasReserveMicroUsdc = vi.fn();
 
 const HASHES: string[] = [];
@@ -24,6 +25,28 @@ function nextHash(): string {
   const hash = `0x${(HASHES.length + 1).toString(16).padStart(64, "0")}`;
   HASHES.push(hash);
   return hash;
+}
+
+const WALLET = "0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0";
+const USDC = "0x3600000000000000000000000000000000000000";
+const EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+const CIRBTC = "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF";
+const POOL = "0x1111111111111111111111111111111111111111";
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+/** A real ERC-20 `Transfer` log, encoded the way a swap receipt carries one. */
+function transferLog(token: string, to: string, value: bigint) {
+  const asTopic = (address: string) => `0x${address.slice(2).toLowerCase().padStart(64, "0")}`;
+  return {
+    address: token,
+    topics: [TRANSFER_TOPIC, asTopic(POOL), asTopic(to)],
+    data: `0x${value.toString(16).padStart(64, "0")}`,
+  };
+}
+
+/** A confirmed receipt carrying the transfers a swap emitted. */
+function receipt(...logs: ReturnType<typeof transferLog>[]) {
+  return { status: "success", logs };
 }
 
 vi.mock("./holdings", () => ({ readCustodyHoldings }));
@@ -37,21 +60,19 @@ vi.mock("./arc-chain", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./arc-chain")>();
   return {
     ...actual,
-    ensureTreasuryWallet: vi.fn(async () => ({
-      id: "t-1",
-      address: "0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0",
-    })),
+    ensureTreasuryWallet: vi.fn(async () => ({ id: "t-1", address: WALLET })),
     withCustodyLock: vi.fn(async (_id: string, fn: (tx: unknown) => Promise<unknown>) => fn({})),
     readAllowance,
     simulateCustodyCall,
     signCustodyCall,
     broadcastSignedTransfer,
     confirmTransfer,
+    getConfirmedReceipt,
     gasReserveMicroUsdc,
   };
 });
 
-const { settleRebalance } = await import("./rebalance-execution");
+const { settleRebalance, readFillFromReceipt } = await import("./rebalance-execution");
 const { ChainError } = await import("./arc-chain");
 
 const TREASURY = "t-1";
@@ -62,7 +83,7 @@ const QUOTE = { usdcUsd: 1, eurUsd: 1.16 } as MarketQuote;
 function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
   return {
     ok: true,
-    walletAddress: "0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0",
+    walletAddress: WALLET,
     readAt: new Date().toISOString(),
     holdings: [
       {
@@ -71,7 +92,7 @@ function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
         decimals: 6,
         role: "stable",
         tradable: true,
-        address: "0x3600000000000000000000000000000000000000",
+        address: USDC,
         coingeckoId: "usd-coin",
         units: usdcUnits,
         raw: BigInt(Math.round(usdcUnits * 1e6)).toString(),
@@ -82,7 +103,7 @@ function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
         decimals: 6,
         role: "risk",
         tradable: true,
-        address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+        address: EURC,
         coingeckoId: "euro-coin",
         units: eurcUnits,
         raw: BigInt(Math.round(eurcUnits * 1e6)).toString(),
@@ -118,7 +139,10 @@ beforeEach(() => {
     nonce: 1,
   }));
   broadcastSignedTransfer.mockResolvedValue(undefined);
+  // Nothing readable from the receipt unless a test says otherwise, so no
+  // test passes on a fill the chain never actually evidenced.
   confirmTransfer.mockResolvedValue(undefined);
+  getConfirmedReceipt.mockResolvedValue(null);
   // ~0.0101 USDC of gas at 400k units.
   gasReserveMicroUsdc.mockResolvedValue(10_080n);
 });
@@ -409,6 +433,92 @@ describe("settleRebalance", () => {
     expect(outcome.settlement.realisedNote).toBeUndefined();
   });
 
+  it("takes the fill from the swap receipt rather than the balance around it", async () => {
+    // The balance delta says 424.15 EURC. The receipt says what the router
+    // actually paid out, and that is the figure with no distortions in it.
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(1000, 0))
+      .mockResolvedValueOnce(holdings(499.98992, 424.15));
+    confirmTransfer.mockResolvedValue(receipt(transferLog(EURC, WALLET, 424_400_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.realisedOutput).toBe("424.4");
+    // 425 quoted against the receipt's 424.4, not against the balance's 424.15.
+    expect(outcome.settlement.realisedSlippagePct).toBeCloseTo(0.141, 3);
+    expect(outcome.settlement.realisedNote).toBeUndefined();
+  });
+
+  it("reports a USDC fill gross, with no gas caveat left to make", async () => {
+    // Selling the euro sleeve back into USDC, the balance Arc bills gas to.
+    // The wallet is 424.9 up; the router paid 424.91 and gas took the rest.
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(0, 1000))
+      .mockResolvedValueOnce(holdings(424.9, 500));
+    confirmTransfer.mockResolvedValue(receipt(transferLog(USDC, WALLET, 424_910_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.outputSymbol).toBe("USDC");
+    expect(outcome.settlement.realisedOutput).toBe("424.91");
+    // The bias the caveat existed to warn about is not in this figure.
+    expect(outcome.settlement.realisedNote).toBeUndefined();
+  });
+
+  it("falls back to the balance delta, caveat and all, when the receipt shows no fill", async () => {
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(0, 1000))
+      .mockResolvedValueOnce(holdings(424.9, 500));
+    // A payout to anywhere other than the custody wallet is not this fill.
+    confirmTransfer.mockResolvedValue(receipt(transferLog(USDC, POOL, 424_910_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.realisedOutput).toBe("424.9");
+    expect(outcome.settlement.realisedNote).toContain("net of the Arc gas");
+  });
+
+  it("still reports the fill when the post-trade holdings read fails", async () => {
+    readCustodyHoldings.mockResolvedValueOnce(holdings(1000, 0)).mockResolvedValueOnce({
+      ok: false,
+      walletAddress: null,
+      holdings: [],
+      error: "RPC timeout",
+      readAt: new Date().toISOString(),
+    });
+    confirmTransfer.mockResolvedValue(receipt(transferLog(EURC, WALLET, 424_400_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    // The fill came off the receipt, so it does not depend on a second read.
+    expect(outcome.settlement.realisedOutput).toBe("424.4");
+    expect(outcome.settlement.realisedSlippagePct).toBeCloseTo(0.141, 3);
+    // Where the book landed genuinely is unknown, and says so.
+    expect(outcome.settlement.holdingsAfter).toEqual([]);
+    expect(outcome.settlement.realisedNote).toContain("unknown rather than unchanged");
+  });
+
+  it("survives a receipt it cannot parse, by measuring the balance instead", async () => {
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(1000, 0))
+      .mockResolvedValueOnce(holdings(499.98992, 424.15));
+    confirmTransfer.mockResolvedValue({ status: "success", logs: [{ nonsense: true }] });
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.realisedOutput).toBe("424.15");
+  });
+
   it("reports a fill that beat the quote as negative slippage", async () => {
     readCustodyHoldings
       .mockResolvedValueOnce(holdings(1000, 0))
@@ -526,5 +636,61 @@ describe("settleRebalance", () => {
     const [request] = getSynthraQuote.mock.calls[0] as [{ inputSymbol: string; outputSymbol: string }];
     expect(request.inputSymbol).toBe("USDC");
     expect(request.outputSymbol).toBe("EURC");
+  });
+});
+
+/**
+ * Recovering a fill from a receipt alone. This is the path a rebalance takes
+ * when the settlement that started it died: there is no pre-trade balance
+ * left to measure against, only the transaction itself.
+ */
+describe("readFillFromReceipt", () => {
+  const TX = `0x${"ab".repeat(32)}` as `0x${string}`;
+
+  it("recovers what the swap paid into the custody wallet", async () => {
+    getConfirmedReceipt.mockResolvedValue(
+      receipt(
+        // The input leg leaving the wallet, then the output leg arriving.
+        transferLog(USDC, POOL, 500_000_000n),
+        transferLog(EURC, WALLET, 424_400_000n),
+      ),
+    );
+
+    const fill = await readFillFromReceipt(TREASURY, TX);
+
+    expect(fill?.token.symbol).toBe("EURC");
+    expect(fill?.credited).toBe(424_400_000n);
+    // Nothing to compare it against this late, and none is invented.
+    expect(fill?.expectedOutput).toBeUndefined();
+    expect(fill?.heldBefore).toBeUndefined();
+  });
+
+  it("reports nothing when the receipt cannot be read", async () => {
+    getConfirmedReceipt.mockResolvedValue(null);
+
+    expect(await readFillFromReceipt(TREASURY, TX)).toBeNull();
+  });
+
+  it("reports nothing when the swap credited the wallet in nothing at all", async () => {
+    getConfirmedReceipt.mockResolvedValue(receipt(transferLog(EURC, POOL, 424_400_000n)));
+
+    expect(await readFillFromReceipt(TREASURY, TX)).toBeNull();
+  });
+
+  it("refuses to guess when more than one token credited the wallet", async () => {
+    getConfirmedReceipt.mockResolvedValue(
+      receipt(
+        transferLog(EURC, WALLET, 424_400_000n),
+        transferLog(CIRBTC, WALLET, 50_000_000n),
+      ),
+    );
+
+    expect(await readFillFromReceipt(TREASURY, TX)).toBeNull();
+  });
+
+  it("never throws, whatever the chain does", async () => {
+    getConfirmedReceipt.mockRejectedValue(new Error("socket hang up"));
+
+    expect(await readFillFromReceipt(TREASURY, TX)).toBeNull();
   });
 });

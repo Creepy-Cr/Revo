@@ -656,13 +656,23 @@ export async function getTransferRecoveryStatus(
   }
 }
 
+/** A mined transaction's receipt, as this client formats it. */
+export type ConfirmedReceipt = Awaited<
+  ReturnType<typeof publicClient.getTransactionReceipt>
+>;
+
 /**
  * Waits for an already-broadcast transaction to confirm. TX_REVERTED means
  * the transfer definitively failed on-chain (refundable); RPC_UNAVAILABLE
  * means the outcome is UNKNOWN - the caller must leave the transfer pending
  * and must not refund.
+ *
+ * The confirmed receipt is returned rather than discarded: it is the only
+ * record of what the transaction actually moved. A withdrawal knows its own
+ * amount and ignores it; a swap does not, and reads its fill out of the
+ * transfer logs.
  */
-export async function confirmTransfer(hash: Hex): Promise<void> {
+export async function confirmTransfer(hash: Hex): Promise<ConfirmedReceipt> {
   let receipt;
   try {
     receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
@@ -674,5 +684,57 @@ export async function confirmTransfer(hash: Hex): Promise<void> {
   }
   if (receipt.status !== "success") {
     throw new ChainError("TX_REVERTED", `The withdrawal transaction reverted on-chain (tx ${hash}).`);
+  }
+  return receipt;
+}
+
+/**
+ * Fetches the receipt of a transaction that is already known to have
+ * confirmed, without ever throwing.
+ *
+ * Null means "the receipt could not be read", never "the transaction did
+ * nothing". Callers use this to report on a transaction after the fact, so a
+ * failure here has to degrade to "not known" rather than propagate.
+ */
+export async function getConfirmedReceipt(hash: Hex): Promise<ConfirmedReceipt | null> {
+  try {
+    const receipt = await publicClient.getTransactionReceipt({ hash });
+    return receipt.status === "success" ? receipt : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Total ERC-20 value `recipient` was credited in `token` by this receipt.
+ *
+ * This is the exact amount a contract paid out, taken from the transaction's
+ * own transfer logs, as opposed to a balance difference measured either side
+ * of it: no gas billed against the same balance and no concurrent transfer
+ * can move it.
+ *
+ * Deliberately total and non-throwing. Every caller is reading a transaction
+ * that has ALREADY confirmed, so a receipt that cannot be parsed has to come
+ * back as "no evidence" - null - rather than as an error that could unsettle
+ * something which really happened. Null is never zero.
+ */
+export function creditedByReceipt(
+  receipt: Pick<ConfirmedReceipt, "logs"> | null | undefined,
+  token: Address,
+  recipient: string,
+): bigint | null {
+  const logs = receipt?.logs;
+  if (!logs || logs.length === 0) return null;
+  try {
+    const to = recipient.toLowerCase();
+    const contract = token.toLowerCase();
+    const credited = parseEventLogs({ abi: erc20Abi, eventName: "Transfer", logs })
+      .filter(
+        (log) => log.address.toLowerCase() === contract && log.args.to.toLowerCase() === to,
+      )
+      .reduce((sum, log) => sum + log.args.value, 0n);
+    return credited > 0n ? credited : null;
+  } catch {
+    return null;
   }
 }

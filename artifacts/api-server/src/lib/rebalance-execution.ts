@@ -19,11 +19,12 @@
  *      nothing and definitively means no key was used.
  *   4. Approve the router for exactly the input amount, and only then sign
  *      the swap.
- *   5. Once the swap has confirmed, read the wallet again and record what
- *      actually came back. A swap may fill anywhere between its floor and its
- *      quote, so intent alone does not describe where the book landed. This
- *      step is measurement only: it runs past the point of no return, so it
- *      can report "not known" but can never change the outcome.
+ *   5. Once the swap has confirmed, take the fill out of its receipt and read
+ *      the wallet again for the composition it produced. A swap may fill
+ *      anywhere between its floor and its quote, so intent alone does not
+ *      describe where the book landed. This step is measurement only: it runs
+ *      past the point of no return, so it can report "not known" but can
+ *      never change the outcome.
  *
  * Outcomes are deliberately three-way rather than throw/return. "refused"
  * means nothing of the treasury's value moved and the proposal must stay
@@ -46,13 +47,16 @@ import {
   USDC_ADDRESS,
   broadcastSignedTransfer,
   confirmTransfer,
+  creditedByReceipt,
   encodeApproval,
   ensureTreasuryWallet,
   gasReserveMicroUsdc,
+  getConfirmedReceipt,
   readAllowance,
   signCustodyCall,
   simulateCustodyCall,
   withCustodyLock,
+  type ConfirmedReceipt,
   type CustodyTransaction,
 } from "./arc-chain";
 import { ARC_TOKENS, type ArcToken } from "./arc-tokens";
@@ -125,8 +129,10 @@ export interface RealisedHolding {
  */
 export interface RealisedOutcome {
   /**
-   * Output token actually received, measured as the wallet's balance change
-   * across the swap. Null when it could not be measured.
+   * Output token actually received: the exact amount the swap's receipt shows
+   * the router paying into the custody wallet, falling back to the wallet's
+   * balance change across the swap when the receipt carries no such transfer.
+   * Null when neither could be measured.
    */
   realisedOutput: string | null;
   /**
@@ -375,13 +381,76 @@ export function describeHoldings(holdings: RealisedHolding[]): string {
   );
 }
 
-/** The fill being measured, when a realised amount is being read back. */
-interface FillMeasurement {
+/**
+ * The fill being measured, when a realised amount is being read back.
+ *
+ * Two independent sources, in preference order. `credited` is what the swap's
+ * own transfer logs say the router paid out - exact, gross of the gas Arc
+ * bills to a USDC balance, and still readable long after the trade. The
+ * balance delta measures the same thing indirectly and is distorted by both
+ * of those, so it is the fallback rather than the primary evidence.
+ */
+export interface FillMeasurement {
   token: ArcToken;
-  /** Output-token balance before the swap, in base units. */
-  heldBefore: bigint;
-  /** Quoted output the fill is judged against. */
-  expectedOutput: string;
+  /** Exact output credited by the swap receipt, in base units. Null when unreadable. */
+  credited?: bigint | null;
+  /** Output-token balance before the swap, in base units. Absent once it is gone. */
+  heldBefore?: bigint | null;
+  /** Quoted output the fill is judged against. Absent when the quote is not known. */
+  expectedOutput?: string | null;
+}
+
+/**
+ * Realised slippage against the quote, in percent. Null whenever either side
+ * is unusable, which includes a fill recovered without the quote it was
+ * signed against.
+ */
+function slippagePct(expectedOutput: string | null | undefined, realisedOutput: string): number | null {
+  const expected = Number(expectedOutput ?? Number.NaN);
+  const realised = Number(realisedOutput);
+  if (!Number.isFinite(expected) || expected <= 0 || !Number.isFinite(realised)) return null;
+  return Math.round(((expected - realised) / expected) * 100_000) / 1000;
+}
+
+/**
+ * The output leg of a swap that has already confirmed, read back from its
+ * receipt: which pinned token the router paid into the custody wallet, and
+ * exactly how much of it.
+ *
+ * This is what lets a rebalance recovered long after its settlement died
+ * still report a fill. The pre-trade balance it would otherwise be measured
+ * against is gone, but the transfer that paid it out stays in the receipt.
+ *
+ * Null whenever the receipt says nothing unambiguous - unreadable, no credit
+ * to the wallet, or more than one token credited, which is not a shape this
+ * settlement produces and so is not a thing to guess between. Reporting, not
+ * control flow: it never throws.
+ */
+export async function readFillFromReceipt(
+  treasuryId: string,
+  txHash: Hex,
+): Promise<FillMeasurement | null> {
+  try {
+    const [wallet, receipt] = await Promise.all([
+      ensureTreasuryWallet(treasuryId),
+      getConfirmedReceipt(txHash),
+    ]);
+    if (!wallet || !receipt) return null;
+    const credits = Object.values(ARC_TOKENS)
+      .map((token) => ({
+        token,
+        credited: creditedByReceipt(receipt, token.address, wallet.address),
+      }))
+      .filter((credit): credit is { token: ArcToken; credited: bigint } => credit.credited !== null);
+    const only = credits.length === 1 ? credits[0] : undefined;
+    return only ? { token: only.token, credited: only.credited } : null;
+  } catch (error) {
+    logger.warn(
+      { err: error, treasuryId, txHash },
+      "Realised fill could not be read from the swap receipt",
+    );
+    return null;
+  }
 }
 
 /**
@@ -399,12 +468,22 @@ export async function readSettledOutcome(
   marketQuote: MarketQuote | null,
   fill?: FillMeasurement,
 ): Promise<RealisedOutcome> {
-  const unknown = (note: string): RealisedOutcome => ({
-    realisedOutput: null,
-    realisedSlippagePct: null,
-    holdingsAfter: [],
-    realisedNote: note,
-  });
+  // A fill taken from the receipt does not depend on the holdings read, so an
+  // unreadable chain hides where the book landed without also hiding what the
+  // swap returned.
+  const unknown = (note: string): RealisedOutcome => {
+    const credited = fill?.credited ?? null;
+    if (!fill || credited === null || credited <= 0n) {
+      return { realisedOutput: null, realisedSlippagePct: null, holdingsAfter: [], realisedNote: note };
+    }
+    const realisedOutput = fromBaseUnits(credited, fill.token.decimals);
+    return {
+      realisedOutput,
+      realisedSlippagePct: slippagePct(fill.expectedOutput, realisedOutput),
+      holdingsAfter: [],
+      realisedNote: note,
+    };
+  };
 
   try {
     const custody = await readCustodyHoldings(treasuryId);
@@ -451,11 +530,19 @@ export async function readSettledOutcome(
       };
     }
 
+    // The receipt first: it is the amount the router actually paid out. The
+    // balance delta only stands in when the receipt carried no such transfer.
+    const fromReceipt = fill.credited ?? null;
+    const heldBefore = fill.heldBefore ?? null;
     const after = custody.holdings.find((h) => h.symbol === fill.token.symbol);
-    const received = after === undefined ? null : BigInt(after.raw) - fill.heldBefore;
-    if (received === null || received <= 0n) {
+    const delta = heldBefore === null || after === undefined ? null : BigInt(after.raw) - heldBefore;
+    const fromBalance = delta !== null && delta > 0n ? delta : null;
+    const received = fromReceipt ?? fromBalance;
+    if (received === null) {
       notes.push(
-        `The wallet's ${fill.token.symbol} balance did not rise across the swap, so the amount actually received could not be measured from balances.`,
+        heldBefore === null
+          ? `The swap's receipt showed no ${fill.token.symbol} arriving in the custody wallet, so the amount actually received could not be measured.`
+          : `The swap's receipt showed no ${fill.token.symbol} arriving in the custody wallet and the wallet's ${fill.token.symbol} balance did not rise across the swap, so the amount actually received could not be measured.`,
       );
       return {
         realisedOutput: null,
@@ -466,17 +553,12 @@ export async function readSettledOutcome(
     }
 
     const realisedOutput = fromBaseUnits(received, fill.token.decimals);
-    const expected = Number(fill.expectedOutput);
-    const realised = Number(realisedOutput);
-    const realisedSlippagePct =
-      Number.isFinite(expected) && expected > 0 && Number.isFinite(realised)
-        ? Math.round(((expected - realised) / expected) * 100_000) / 1000
-        : null;
 
-    if (isGasAsset(fill.token)) {
-      // Arc settles gas in USDC out of this very balance, so the measured
-      // delta is the fill minus this rebalance's gas. Small, but it is a real
-      // bias and an operator comparing fills deserves to know it is there.
+    if (fromReceipt === null && isGasAsset(fill.token)) {
+      // Only the balance delta carries this bias: Arc settles gas in USDC out
+      // of the very balance being measured, so the difference is the fill
+      // minus this rebalance's gas. A figure taken from the transfer log is
+      // gross of it, and the caveat is dropped rather than restated.
       notes.push(
         `The received figure is the wallet's ${fill.token.symbol} balance change, so it is net of the Arc gas this rebalance paid in ${fill.token.symbol}.`,
       );
@@ -484,7 +566,7 @@ export async function readSettledOutcome(
 
     return {
       realisedOutput,
-      realisedSlippagePct,
+      realisedSlippagePct: slippagePct(fill.expectedOutput, realisedOutput),
       holdingsAfter,
       ...(notes.length > 0 ? { realisedNote: notes.join(" ") } : {}),
     };
@@ -673,8 +755,9 @@ export async function settleRebalance(
 
   // Confirmation runs outside the custody lock: the nonce is already
   // committed, and holding the lock for a minute would stall withdrawals.
+  let receipt: ConfirmedReceipt | undefined;
   try {
-    await confirmTransfer(swapHash);
+    receipt = await confirmTransfer(swapHash);
   } catch (error) {
     if (error instanceof ChainError && error.code === "TX_REVERTED") {
       return {
@@ -698,6 +781,10 @@ export async function settleRebalance(
   // outcome or throw - see `readSettledOutcome`.
   const realised = await readSettledOutcome(treasuryId, marketQuote, {
     token: leg.output,
+    // Exactly what the router paid out, straight from the confirmed receipt.
+    // Never throws, so a receipt that cannot be parsed simply leaves the
+    // balance delta below to measure the fill as it always did.
+    credited: creditedByReceipt(receipt, leg.output.address, wallet.address),
     heldBefore: outputHeldBefore,
     expectedOutput: quote.expectedOutput ?? "0",
   });

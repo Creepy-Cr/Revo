@@ -42,6 +42,7 @@ import { logger } from "./logger";
 import { getMarketQuote, type MarketQuote } from "./market";
 import {
   describeHoldings,
+  readFillFromReceipt,
   readSettledOutcome,
   settleRebalance,
   type SwapSettlement,
@@ -421,6 +422,8 @@ export async function reconcileApprovedProposals(
 
     let resolution: "executed" | "pending";
     let reason: string;
+    /** The fill this pass managed to recover, for the audit trail. */
+    let realisedOutput: string | null = null;
 
     if (row.executionTxHash) {
       if (ageMs < SETTLEMENT_GRACE_MS) continue;
@@ -472,11 +475,26 @@ export async function reconcileApprovedProposals(
     resolved += 1;
 
     if (resolution === "executed") {
-      // This swap's realised fill cannot be recovered - the balance it started
-      // from is long gone - but where the book ACTUALLY landed still can be,
-      // and that is the part an operator is looking for beside "executed".
+      // The balance this swap was sized against is long gone, but the
+      // transfer that paid it out is still in its receipt, so a recovered
+      // rebalance can report what it returned and not only where the book
+      // ended up. Both reads are reporting: neither can undo the resolution.
       assertWorkerFence();
-      const outcome = await readSettledOutcome(treasuryId, await getMarketQuote());
+      const fill = row.executionTxHash
+        ? await readFillFromReceipt(treasuryId, row.executionTxHash as Hex)
+        : null;
+      assertWorkerFence();
+      const outcome = await readSettledOutcome(
+        treasuryId,
+        await getMarketQuote(),
+        fill ?? undefined,
+      );
+      realisedOutput = outcome.realisedOutput;
+      if (fill && outcome.realisedOutput !== null) {
+        // No quote survives here to measure it against, so the fill is
+        // reported as the amount it is rather than as slippage.
+        reason += ` The swap returned ${outcome.realisedOutput} ${fill.token.symbol}, read from its transfer logs.`;
+      }
       if (outcome.holdingsAfter.length > 0) {
         reason += ` The treasury now holds ${describeHoldings(outcome.holdingsAfter)}.`;
       }
@@ -500,7 +518,7 @@ export async function reconcileApprovedProposals(
       resourceId: row.id,
       result: resolution === "executed" ? "ok" : "failed",
       reason,
-      detail: { status: resolution, txHash: row.executionTxHash },
+      detail: { status: resolution, txHash: row.executionTxHash, realisedOutput },
     });
   }
 

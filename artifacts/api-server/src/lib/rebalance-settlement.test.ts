@@ -27,13 +27,14 @@ process.env.CUSTODY_MASTER_SECRET ??= "test-only-custody-master-secret";
 
 const settleRebalance = vi.fn();
 const readSettledOutcome = vi.fn();
+const readFillFromReceipt = vi.fn();
 const getTransferRecoveryStatus = vi.fn();
 
 // `describeHoldings` stays real: the operator-facing copy is part of what
 // these tests are checking, not something worth restating in a stub.
 vi.mock("./rebalance-execution", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./rebalance-execution")>();
-  return { ...actual, settleRebalance, readSettledOutcome };
+  return { ...actual, settleRebalance, readSettledOutcome, readFillFromReceipt };
 });
 
 vi.mock("./arc-chain", async (importOriginal) => {
@@ -126,6 +127,7 @@ beforeEach(async () => {
     realisedSlippagePct: null,
     holdingsAfter: [],
   });
+  readFillFromReceipt.mockResolvedValue(null);
   treasuryId = `test-rebalance-${randomUUID()}`;
   treasuryIds.push(treasuryId);
   await db.insert(treasuriesTable).values({
@@ -257,6 +259,37 @@ describe("reconciling proposals stranded at approved", () => {
     const logged = await activities();
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({ status: "executed", txHash: TX_HASH });
+  });
+
+  it("reports what a recovered swap returned, read from its receipt", async () => {
+    const id = await seedProposal({ executionTxHash: TX_HASH });
+    getTransferRecoveryStatus.mockResolvedValue("success");
+    // The balance this swap was sized against is long gone, but the transfer
+    // that paid it out is still in the receipt.
+    readFillFromReceipt.mockResolvedValue({
+      token: { symbol: "EURC", decimals: 6 },
+      credited: 424_400_000n,
+    });
+    readSettledOutcome.mockResolvedValue({
+      realisedOutput: "424.4",
+      realisedSlippagePct: null,
+      holdingsAfter: [
+        { symbol: "USDC", units: "499.98992", percentage: 50.4 },
+        { symbol: "EURC", units: "424.4", percentage: 49.6 },
+      ],
+    });
+
+    expect(await reconcileApprovedProposals(treasuryId)).toBe(1);
+
+    expect(readFillFromReceipt).toHaveBeenCalledWith(treasuryId, TX_HASH);
+    expect(readSettledOutcome).toHaveBeenCalledWith(
+      treasuryId,
+      expect.anything(),
+      expect.objectContaining({ credited: 424_400_000n }),
+    );
+    const [logged] = await activities();
+    expect(logged!.detail).toContain("The swap returned 424.4 EURC, read from its transfer logs.");
+    expect(logged!.detail).toContain("The treasury now holds");
   });
 
   it("states where the book landed when it recovers a settled swap", async () => {
