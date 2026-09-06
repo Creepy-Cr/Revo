@@ -10,6 +10,10 @@
  * from. Between them those are the only thing standing between one approved
  * rebalance and two swaps.
  *
+ * The same wrapper carries the two halts an operator can put on a treasury -
+ * the emergency pause and Safe mode - which are checked inside that very
+ * transaction, so they are pinned here as well.
+ *
  * Every settlement outcome is chosen by the stub, so what is under test is the
  * route's decision rather than the network. The database is the real
  * development one, so the treasury id is unique per run and every row it owns
@@ -33,6 +37,11 @@ import {
   type PolicyRules,
 } from "@workspace/db";
 import { ARC_TOKENS } from "../lib/arc-tokens";
+import {
+  getSecurityControls,
+  setEmergencyPause,
+  treasuryTransitionLock,
+} from "../lib/security-controls";
 
 const TEST_TREASURY_ID = `test-treasury-approve-${randomUUID()}`;
 const WALLET = "0x00000000000000000000000000000000000Ae916";
@@ -262,6 +271,34 @@ async function setMode(mode: "safe" | "managed" | "autonomous"): Promise<void> {
     .onConflictDoUpdate({ target: treasurySettingsTable.id, set: { mode } });
 }
 
+async function approvePolicy(policyId: string): Promise<Response> {
+  return api(`/treasury/policies/${policyId}/approve`, { method: "POST" });
+}
+
+async function policyRow(id: string) {
+  const [row] = await db.select().from(policiesTable).where(eq(policiesTable.id, id));
+  return row!;
+}
+
+/**
+ * The real pause path rather than a bare column write, so the flip takes the
+ * same transition lock an approval takes and is ordered against it exactly as
+ * production orders it.
+ */
+async function setPause(active: boolean, reason: string): Promise<void> {
+  await setEmergencyPause({
+    treasuryId: TEST_TREASURY_ID,
+    active,
+    reason,
+    actorWallet: OPERATOR_WALLET,
+    actorRole: "guardian",
+  });
+}
+
+async function pauseIsActive(): Promise<boolean> {
+  return (await getSecurityControls(TEST_TREASURY_ID)).pauseActive;
+}
+
 beforeAll(async () => {
   await db.insert(treasuriesTable).values({
     id: TEST_TREASURY_ID,
@@ -482,4 +519,201 @@ describe("approving a policy in autonomous mode", () => {
     const [proposal] = await proposalsForPolicy(policyId);
     expect(proposal).toMatchObject({ status: "approved", executionTxHash: null });
   });
+});
+
+/**
+ * The two ways a treasury is halted: the emergency pause a guardian pulls,
+ * and Safe mode. Both are refusals an operator is told about, but the part
+ * worth pinning is the trade: every test here checks the stub was never
+ * reached, because a 409 that still sends the swap is the failure that costs
+ * money.
+ */
+describe("approving while the treasury is halted", () => {
+  afterEach(async () => {
+    await setPause(false, "Test teardown: releasing the pause");
+    await setMode("managed");
+  });
+
+  it("refuses a proposal approval while the emergency pause is active", async () => {
+    await setMode("managed");
+    const txHash = nextHash();
+    settleRebalance.mockResolvedValue(settledOutcome(txHash));
+    const id = await seedProposal();
+    await setPause(true, "Custody signer suspected compromised");
+
+    const refused = await approve(id);
+
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("Emergency pause is active"),
+    });
+    expect(settleRebalance).not.toHaveBeenCalled();
+    // Nothing was claimed either, so the proposal is still the operator's to
+    // act on once the pause is lifted.
+    expect(await proposalRow(id)).toMatchObject({
+      status: "pending",
+      decidedAt: null,
+      executionTxHash: null,
+    });
+
+    // And the pause is the only thing that stopped it: released, the very
+    // same proposal approves and settles.
+    await setPause(false, "Signer rotated, resuming");
+    expect((await approve(id)).status).toBe(200);
+    await drainProposalSettlements();
+
+    expect(await proposalRow(id)).toMatchObject({ status: "executed", executionTxHash: txHash });
+    expect(settleRebalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a policy approval while the emergency pause is active", async () => {
+    // Autonomous mode, so without the guard this activation would draft a
+    // rebalance, auto-approve it and settle a real swap.
+    await setMode("autonomous");
+    settleRebalance.mockResolvedValue(settledOutcome(nextHash()));
+    const policyId = await seedPolicyDraft();
+    await setPause(true, "Arc RPC returning inconsistent balances");
+
+    const refused = await approvePolicy(policyId);
+
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("Emergency pause is active"),
+    });
+    await drainProposalSettlements();
+    expect(settleRebalance).not.toHaveBeenCalled();
+    // The policy never went live, and no rebalance was drafted from it, so
+    // there is nothing left behind that could execute later.
+    expect(await policyRow(policyId)).toMatchObject({ status: "draft", decidedAt: null });
+    expect(await proposalsForPolicy(policyId)).toHaveLength(0);
+  });
+
+  it("refuses a proposal approval in Safe mode", async () => {
+    await setMode("safe");
+    settleRebalance.mockResolvedValue(settledOutcome(nextHash()));
+    const id = await seedProposal();
+
+    const refused = await approve(id);
+
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("Safe mode is on"),
+    });
+    expect(settleRebalance).not.toHaveBeenCalled();
+    expect(await proposalRow(id)).toMatchObject({
+      status: "pending",
+      decidedAt: null,
+      executionTxHash: null,
+    });
+  });
+
+  it("refuses a policy approval in Safe mode", async () => {
+    await setMode("safe");
+    settleRebalance.mockResolvedValue(settledOutcome(nextHash()));
+    const policyId = await seedPolicyDraft();
+
+    const refused = await approvePolicy(policyId);
+
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("Safe mode is on"),
+    });
+    expect(settleRebalance).not.toHaveBeenCalled();
+    expect(await policyRow(policyId)).toMatchObject({ status: "draft", decidedAt: null });
+    expect(await proposalsForPolicy(policyId)).toHaveLength(0);
+  });
+
+  /**
+   * Runs an approval and a pause into each other for real.
+   *
+   * Both have to take the treasury transition lock, so the lock is held here
+   * first and the two are queued behind it in the given order. Releasing it
+   * puts them in contention at one instant, with the arrival order deciding
+   * which of the two legal outcomes the treasury lands on - rather than
+   * whichever round trip happened to start faster.
+   */
+  async function raceAgainstPause(proposalId: string, arrivesFirst: "approval" | "pause") {
+    const acquired = gate();
+    const release = gate();
+    const holding = db.transaction(async (tx) => {
+      await tx.execute(treasuryTransitionLock(TEST_TREASURY_ID));
+      acquired.release();
+      await release.promise;
+    });
+    await acquired.promise;
+
+    const startApproval = () => approve(proposalId);
+    const startPause = () => setPause(true, "Guardian pulled the brake mid-approval");
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 200));
+
+    let approving: Promise<Response>;
+    let pausing: Promise<void>;
+    if (arrivesFirst === "approval") {
+      approving = startApproval();
+      await settle();
+      pausing = startPause();
+    } else {
+      pausing = startPause();
+      await settle();
+      approving = startApproval();
+    }
+    await settle();
+    release.release();
+
+    const [decision] = await Promise.all([approving, pausing, holding]);
+    await drainProposalSettlements();
+    return decision;
+  }
+
+  /**
+   * The pause is on and the treasury is in one of exactly two states: the
+   * approval was ordered first and owns a finished swap, or the pause was
+   * ordered first and nothing was claimed or sent. What must never appear is
+   * the state in between - a claimed proposal with a swap already gone.
+   */
+  async function expectResolvedEitherWay(
+    id: string,
+    decision: Response,
+    txHash: string,
+  ): Promise<void> {
+    expect(await pauseIsActive()).toBe(true);
+    const proposal = await proposalRow(id);
+    if (decision.status === 200) {
+      expect(settleRebalance).toHaveBeenCalledTimes(1);
+      expect(proposal).toMatchObject({ status: "executed", executionTxHash: txHash });
+    } else {
+      expect(decision.status).toBe(409);
+      expect(await decision.json()).toMatchObject({
+        error: expect.stringContaining("Emergency pause is active"),
+      });
+      expect(settleRebalance).not.toHaveBeenCalled();
+      expect(proposal).toMatchObject({
+        status: "pending",
+        decidedAt: null,
+        executionTxHash: null,
+      });
+    }
+  }
+
+  it("finishes the swap of an approval the pause arrived behind", async () => {
+    await setMode("managed");
+    const txHash = nextHash();
+    settleRebalance.mockResolvedValue(settledOutcome(txHash));
+    const id = await seedProposal();
+
+    const decision = await raceAgainstPause(id, "approval");
+
+    await expectResolvedEitherWay(id, decision, txHash);
+  }, 15_000);
+
+  it("sends nothing for an approval that arrived behind the pause", async () => {
+    await setMode("managed");
+    const txHash = nextHash();
+    settleRebalance.mockResolvedValue(settledOutcome(txHash));
+    const id = await seedProposal();
+
+    const decision = await raceAgainstPause(id, "pause");
+
+    await expectResolvedEitherWay(id, decision, txHash);
+  }, 15_000);
 });
