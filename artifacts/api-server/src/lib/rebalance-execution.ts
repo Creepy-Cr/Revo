@@ -19,6 +19,11 @@
  *      nothing and definitively means no key was used.
  *   4. Approve the router for exactly the input amount, and only then sign
  *      the swap.
+ *   5. Once the swap has confirmed, read the wallet again and record what
+ *      actually came back. A swap may fill anywhere between its floor and its
+ *      quote, so intent alone does not describe where the book landed. This
+ *      step is measurement only: it runs past the point of no return, so it
+ *      can report "not known" but can never change the outcome.
  *
  * Outcomes are deliberately three-way rather than throw/return. "refused"
  * means nothing of the treasury's value moved and the proposal must stay
@@ -38,6 +43,7 @@ import type { AllocationTarget } from "@workspace/db";
 import {
   ChainError,
   EXPLORER_URL,
+  USDC_ADDRESS,
   broadcastSignedTransfer,
   confirmTransfer,
   encodeApproval,
@@ -96,7 +102,47 @@ const swapRouterAbi = [
   },
 ] as const;
 
-export interface SwapSettlement {
+/** One line of the treasury's composition, read back after a swap settled. */
+export interface RealisedHolding {
+  symbol: string;
+  /** Exact human units held, at the token's own precision. */
+  units: string;
+  /**
+   * Share of the book by USD value. Null when the whole book could not be
+   * valued: a percentage computed over a partly-priced book is wrong in a way
+   * that reads as a real position, so it is withheld rather than estimated.
+   */
+  percentage: number | null;
+}
+
+/**
+ * What a rebalance actually achieved, measured from the wallet after its swap
+ * confirmed - as opposed to what it aimed for, which is the quote.
+ *
+ * Every field is nullable on purpose. This is measurement after the fact: the
+ * trade has already landed, so a chain that cannot be read has to come back as
+ * "not known". A failed read is never a zero fill and never an empty treasury.
+ */
+export interface RealisedOutcome {
+  /**
+   * Output token actually received, measured as the wallet's balance change
+   * across the swap. Null when it could not be measured.
+   */
+  realisedOutput: string | null;
+  /**
+   * Realised slippage against the quote, in percent. Positive means the fill
+   * came in below the quoted output (the usual direction), negative means it
+   * beat the quote. A run of these drifting toward the floor is what pool
+   * depth deteriorating looks like from here.
+   */
+  realisedSlippagePct: number | null;
+  /** Composition after the swap. Empty when the chain could not be re-read. */
+  holdingsAfter: RealisedHolding[];
+  /** Why the figures above are missing, unqualified, or carry a caveat. */
+  realisedNote?: string;
+}
+
+export interface SwapSettlement extends RealisedOutcome {
   txHash: string;
   explorerUrl: string;
   inputSymbol: string;
@@ -154,7 +200,17 @@ interface SwapLeg {
 }
 
 type PlanResult =
-  | { kind: "swap"; leg: SwapLeg }
+  | {
+      kind: "swap";
+      leg: SwapLeg;
+      /**
+       * Output-token balance the wallet held when the trade was sized, in base
+       * units. The realised fill is measured against this, so it is carried
+       * out of the planner rather than re-read later - by then the swap has
+       * already moved it.
+       */
+      outputHeldBefore: bigint;
+    }
   | { kind: "nothing-to-do"; reason: string }
   | { kind: "refused"; reason: string };
 
@@ -295,7 +351,150 @@ async function planSwap(
       amountBaseUnits,
       notionalUsd: Number(fromBaseUnits(amountBaseUnits, sell.token.decimals)) * sell.entry.price,
     },
+    outputHeldBefore: BigInt(buy.entry.holding.raw),
   };
+}
+
+/** Whether Arc bills this token's balance for gas, which is USDC and only USDC. */
+function isGasAsset(token: ArcToken): boolean {
+  return token.address.toLowerCase() === USDC_ADDRESS.toLowerCase();
+}
+
+/** Joins a short list into prose: "a", "a and b", "a, b and c". */
+function listSentence(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** Renders a composition for an operator: "500.01 USDC (54.1%) and 424.1 EURC (45.9%)". */
+export function describeHoldings(holdings: RealisedHolding[]): string {
+  return listSentence(
+    holdings.map((h) =>
+      h.percentage === null ? `${h.units} ${h.symbol}` : `${h.units} ${h.symbol} (${h.percentage}%)`,
+    ),
+  );
+}
+
+/** The fill being measured, when a realised amount is being read back. */
+interface FillMeasurement {
+  token: ArcToken;
+  /** Output-token balance before the swap, in base units. */
+  heldBefore: bigint;
+  /** Quoted output the fill is judged against. */
+  expectedOutput: string;
+}
+
+/**
+ * Reads back what the treasury actually holds once a swap has confirmed, and
+ * how much of the output token really arrived.
+ *
+ * This runs AFTER the point of no return, so it is reporting and never
+ * control flow. It cannot throw and it cannot fail a settlement: the swap has
+ * confirmed either way, and the only honest thing to do with an unreadable
+ * chain is to say the realised figures are unknown. Reporting a failed read
+ * as a zero fill would turn a good trade into an apparent total loss.
+ */
+export async function readSettledOutcome(
+  treasuryId: string,
+  marketQuote: MarketQuote | null,
+  fill?: FillMeasurement,
+): Promise<RealisedOutcome> {
+  const unknown = (note: string): RealisedOutcome => ({
+    realisedOutput: null,
+    realisedSlippagePct: null,
+    holdingsAfter: [],
+    realisedNote: note,
+  });
+
+  try {
+    const custody = await readCustodyHoldings(treasuryId);
+    if (!custody.ok) {
+      return unknown(
+        `Holdings could not be re-read after the swap confirmed (${custody.error ?? "Arc RPC unreachable"}), so what the treasury now holds is unknown rather than unchanged.`,
+      );
+    }
+
+    const notes: string[] = [];
+    const held = custody.holdings.filter((h) => h.units > 0);
+    const priced = held.map((h) => ({
+      holding: h,
+      price: referencePriceFor(h.coingeckoId, marketQuote),
+    }));
+    const unpriced = priced.filter((p) => p.price === undefined);
+    const totalUsd = priced.reduce((sum, p) => sum + p.holding.units * (p.price ?? 0), 0);
+    // Same rule as the dashboard's valuation gate: a split derived from a
+    // partly-priced book understates whatever could not be valued, which
+    // reads as a position the treasury does not have.
+    const splitKnown = unpriced.length === 0 && totalUsd > 0;
+    if (held.length > 0 && !splitKnown) {
+      notes.push(
+        unpriced.length > 0
+          ? `No reference price for ${unpriced.map((p) => p.holding.symbol).join(", ")}, so the post-trade split is reported in units only.`
+          : "The book could not be valued, so the post-trade split is reported in units only.",
+      );
+    }
+
+    const holdingsAfter: RealisedHolding[] = priced.map((p) => ({
+      symbol: p.holding.symbol,
+      units: fromBaseUnits(BigInt(p.holding.raw), p.holding.decimals),
+      percentage: splitKnown
+        ? Math.round(((p.holding.units * (p.price ?? 0)) / totalUsd) * 1000) / 10
+        : null,
+    }));
+
+    if (!fill) {
+      return {
+        realisedOutput: null,
+        realisedSlippagePct: null,
+        holdingsAfter,
+        ...(notes.length > 0 ? { realisedNote: notes.join(" ") } : {}),
+      };
+    }
+
+    const after = custody.holdings.find((h) => h.symbol === fill.token.symbol);
+    const received = after === undefined ? null : BigInt(after.raw) - fill.heldBefore;
+    if (received === null || received <= 0n) {
+      notes.push(
+        `The wallet's ${fill.token.symbol} balance did not rise across the swap, so the amount actually received could not be measured from balances.`,
+      );
+      return {
+        realisedOutput: null,
+        realisedSlippagePct: null,
+        holdingsAfter,
+        realisedNote: notes.join(" "),
+      };
+    }
+
+    const realisedOutput = fromBaseUnits(received, fill.token.decimals);
+    const expected = Number(fill.expectedOutput);
+    const realised = Number(realisedOutput);
+    const realisedSlippagePct =
+      Number.isFinite(expected) && expected > 0 && Number.isFinite(realised)
+        ? Math.round(((expected - realised) / expected) * 100_000) / 1000
+        : null;
+
+    if (isGasAsset(fill.token)) {
+      // Arc settles gas in USDC out of this very balance, so the measured
+      // delta is the fill minus this rebalance's gas. Small, but it is a real
+      // bias and an operator comparing fills deserves to know it is there.
+      notes.push(
+        `The received figure is the wallet's ${fill.token.symbol} balance change, so it is net of the Arc gas this rebalance paid in ${fill.token.symbol}.`,
+      );
+    }
+
+    return {
+      realisedOutput,
+      realisedSlippagePct,
+      holdingsAfter,
+      ...(notes.length > 0 ? { realisedNote: notes.join(" ") } : {}),
+    };
+  } catch (error) {
+    return unknown(
+      `Holdings could not be re-read after the swap confirmed (${
+        error instanceof Error ? error.message : "Arc RPC unreachable"
+      }), so what the treasury now holds is unknown rather than unchanged.`,
+    );
+  }
 }
 
 function encodeSwap(leg: SwapLeg, recipient: string, feeTier: number, minOut: bigint): Hex {
@@ -354,7 +553,7 @@ export async function settleRebalance(
     return classify(error, "sizing the trade");
   }
   if (plan.kind !== "swap") return plan;
-  const { leg } = plan;
+  const { leg, outputHeldBefore } = plan;
 
   // The same guards the operator-facing quote endpoint applies. A route that
   // is too shallow, too far from the real market, or too deep a bite of the
@@ -494,6 +693,15 @@ export async function settleRebalance(
     };
   }
 
+  // The swap is settled from here on. Reading back what it achieved is
+  // reporting, so it can degrade to "not known" but must never change the
+  // outcome or throw - see `readSettledOutcome`.
+  const realised = await readSettledOutcome(treasuryId, marketQuote, {
+    token: leg.output,
+    heldBefore: outputHeldBefore,
+    expectedOutput: quote.expectedOutput ?? "0",
+  });
+
   return {
     kind: "settled",
     settlement: {
@@ -505,6 +713,7 @@ export async function settleRebalance(
       expectedOutput: quote.expectedOutput ?? "0",
       minOutput: quote.minOutput,
       feeTier,
+      ...realised,
       ...(approvalTxHash ? { approvalTxHash } : {}),
     },
   };

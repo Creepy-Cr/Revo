@@ -387,6 +387,138 @@ describe("settleRebalance", () => {
     expect(confirmTransfer).not.toHaveBeenCalledWith(HASHES[1]);
   });
 
+  it("records what the swap actually returned, not only what the quote expected", async () => {
+    // Sized against 1000 USDC, then read back after the swap: 500 USDC left
+    // (less the gas Arc billed) and a fill that landed just under the quote.
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(1000, 0))
+      .mockResolvedValueOnce(holdings(499.98992, 424.15));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.expectedOutput).toBe("425.000000");
+    expect(outcome.settlement.realisedOutput).toBe("424.15");
+    // 425 quoted, 424.15 received: 0.2% of the quote, well inside the floor.
+    expect(outcome.settlement.realisedSlippagePct).toBeCloseTo(0.2, 3);
+    // Where the book actually landed, not the 50/50 that was aimed for.
+    expect(outcome.settlement.holdingsAfter).toEqual([
+      { symbol: "USDC", units: "499.98992", percentage: 50.4 },
+      { symbol: "EURC", units: "424.15", percentage: 49.6 },
+    ]);
+    expect(outcome.settlement.realisedNote).toBeUndefined();
+  });
+
+  it("reports a fill that beat the quote as negative slippage", async () => {
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(1000, 0))
+      .mockResolvedValueOnce(holdings(499.98992, 426.7));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.realisedOutput).toBe("426.7");
+    expect(outcome.settlement.realisedSlippagePct).toBeCloseTo(-0.4, 3);
+  });
+
+  it("says the received figure is net of gas when the fill lands in the gas asset", async () => {
+    // Selling the euro sleeve back into USDC, which is the balance Arc bills
+    // gas to, so the measured delta is the fill minus this trade's gas.
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(0, 1000))
+      .mockResolvedValueOnce(holdings(424.9, 500));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.outputSymbol).toBe("USDC");
+    expect(outcome.settlement.realisedOutput).toBe("424.9");
+    expect(outcome.settlement.realisedNote).toContain("net of the Arc gas");
+  });
+
+  it("keeps the settlement settled when holdings cannot be re-read afterwards", async () => {
+    readCustodyHoldings.mockResolvedValueOnce(holdings(1000, 0)).mockResolvedValueOnce({
+      ok: false,
+      walletAddress: null,
+      holdings: [],
+      error: "RPC timeout",
+      readAt: new Date().toISOString(),
+    });
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    // The swap confirmed. A failed read is a failed read: it cannot unsettle a
+    // trade that already happened, and it is never a zero fill.
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.txHash).toBe(HASHES[1]);
+    expect(outcome.settlement.realisedOutput).toBeNull();
+    expect(outcome.settlement.realisedSlippagePct).toBeNull();
+    expect(outcome.settlement.holdingsAfter).toEqual([]);
+    expect(outcome.settlement.realisedNote).toContain("RPC timeout");
+    expect(outcome.settlement.realisedNote).toContain("unknown rather than unchanged");
+  });
+
+  it("survives a post-trade read that throws outright", async () => {
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(1000, 0))
+      .mockRejectedValueOnce(new Error("socket hang up"));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.realisedOutput).toBeNull();
+    expect(outcome.settlement.realisedNote).toContain("socket hang up");
+  });
+
+  it("calls an unmoved output balance unmeasurable rather than a zero fill", async () => {
+    // The post-trade read shows no more EURC than before - another transfer
+    // in the same window, or a stale node. Either way it is not a zero fill.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.realisedOutput).toBeNull();
+    expect(outcome.settlement.realisedSlippagePct).toBeNull();
+    expect(outcome.settlement.realisedNote).toContain("could not be measured");
+    // The composition itself was read fine, so it is still reported.
+    expect(outcome.settlement.holdingsAfter).toEqual([
+      { symbol: "USDC", units: "1000", percentage: 100 },
+    ]);
+  });
+
+  it("withholds the post-trade split when part of the book has no price", async () => {
+    const unpricedBtc = {
+      symbol: "cirBTC",
+      name: "Bitcoin sleeve",
+      decimals: 8,
+      role: "risk",
+      tradable: false,
+      address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+      coingeckoId: "bitcoin",
+      units: 0.5,
+      raw: "50000000",
+    };
+    readCustodyHoldings
+      .mockResolvedValueOnce(holdings(1000, 0))
+      .mockResolvedValueOnce(holdings(499.98992, 424.15, [unpricedBtc]));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    // Units are facts; a split over a book that cannot be fully valued is not.
+    expect(outcome.settlement.realisedOutput).toBe("424.15");
+    expect(outcome.settlement.holdingsAfter.map((h) => h.percentage)).toEqual([null, null, null]);
+    expect(outcome.settlement.realisedNote).toContain("cirBTC");
+  });
+
   it("never routes the untradable leg, even when it is the furthest from target", async () => {
     readCustodyHoldings.mockResolvedValue(holdings(1000, 0));
 

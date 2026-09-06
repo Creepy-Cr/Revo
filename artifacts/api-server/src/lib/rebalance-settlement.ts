@@ -39,8 +39,13 @@ import { getTransferRecoveryStatus, type CustodyTransaction } from "./arc-chain"
 import { raiseAlert } from "./alerts";
 import { auditSafe } from "./audit";
 import { logger } from "./logger";
-import type { MarketQuote } from "./market";
-import { settleRebalance } from "./rebalance-execution";
+import { getMarketQuote, type MarketQuote } from "./market";
+import {
+  describeHoldings,
+  readSettledOutcome,
+  settleRebalance,
+  type SwapSettlement,
+} from "./rebalance-execution";
 import { logActivity } from "./state";
 
 /**
@@ -71,7 +76,12 @@ const MISSING_TX_REVIEW_MS = 30 * 60_000;
 const MANUAL_REVIEW_ALERT = "rebalance.manual-review";
 
 export type SettlementResult =
-  | { kind: "executed"; proposal: TreasuryProposal }
+  /**
+   * Present only when THIS call settled a swap on Arc: it carries the realised
+   * fill, so the audit trail records what the rebalance achieved rather than
+   * only what it intended. Absent when no swap was needed at all.
+   */
+  | { kind: "executed"; proposal: TreasuryProposal; settlement?: SwapSettlement }
   | { kind: "unsettled"; proposal: TreasuryProposal; error: string };
 
 type ProposalWrite = Partial<typeof treasuryProposalsTable.$inferInsert>;
@@ -98,6 +108,51 @@ async function writeIfStillApproved(
     )
     .returning();
   return updated;
+}
+
+/**
+ * The operator-facing account of a settled rebalance.
+ *
+ * A settlement used to be described purely as intent - what was sent, what
+ * the quote expected, what floor it was signed against - so "executed" beside
+ * a 50/50 target said nothing about where the book actually landed. A swap
+ * may legitimately fill anywhere between the floor and the quote, so the
+ * realised fill and the composition it produced lead here, and the quote is
+ * kept beside them as the thing being measured against.
+ *
+ * When the post-trade read failed, the entry says so in as many words. It
+ * never falls back to reporting the quote as though it were the fill.
+ */
+function describeSettlement(settlement: SwapSettlement, action: string): string {
+  const tier = `${settlement.feeTier / 10_000}% tier`;
+  const parts: string[] = [];
+  const realisedSlippagePct = settlement.realisedSlippagePct ?? null;
+  const holdingsAfter = settlement.holdingsAfter ?? [];
+
+  if ((settlement.realisedOutput ?? null) === null) {
+    parts.push(
+      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} on Synthra (${tier}) against a quote of ${settlement.expectedOutput} ${settlement.outputSymbol}, with a floor of ${settlement.minOutput} ${settlement.outputSymbol}.`,
+    );
+  } else {
+    parts.push(
+      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} and received ${settlement.realisedOutput} ${settlement.outputSymbol} on Synthra (${tier}), against a quote of ${settlement.expectedOutput} and a floor of ${settlement.minOutput} ${settlement.outputSymbol}.`,
+    );
+    if (realisedSlippagePct !== null) {
+      const magnitude = Math.abs(realisedSlippagePct).toFixed(2);
+      parts.push(
+        realisedSlippagePct >= 0
+          ? `Realised slippage was ${magnitude}% below the quote.`
+          : `The fill beat the quote by ${magnitude}%.`,
+      );
+    }
+  }
+
+  if (holdingsAfter.length > 0) {
+    parts.push(`The treasury now holds ${describeHoldings(holdingsAfter)}.`);
+  }
+  if (settlement.realisedNote) parts.push(settlement.realisedNote);
+  parts.push(`Target: ${action}.`);
+  return parts.join(" ");
 }
 
 /**
@@ -174,13 +229,13 @@ export async function settleApprovedProposal(
       await logActivity(
         treasuryId,
         "Rebalance settled on Arc",
-        `Swapped ${settlement.amountIn} ${settlement.inputSymbol} for ${settlement.expectedOutput} ${settlement.outputSymbol} on Synthra (${settlement.feeTier / 10_000}% tier), with a floor of ${settlement.minOutput} ${settlement.outputSymbol}. Target: ${proposal.action}.`,
+        describeSettlement(settlement, proposal.action),
         "executed",
         "onchain",
         settlement.txHash,
       );
     }
-    return { kind: "executed", proposal: executed ?? proposal };
+    return { kind: "executed", proposal: executed ?? proposal, settlement };
   }
 
   if (outcome.kind === "nothing-to-do") {
@@ -272,6 +327,16 @@ export function startProposalSettlement(
         detail: {
           status: settled.proposal.status,
           txHash: settled.proposal.executionTxHash,
+          // Intent and outcome side by side: a run of fills drifting toward
+          // the floor is only visible if each one is recorded.
+          ...(settled.kind === "executed" && settled.settlement
+            ? {
+                expectedOutput: settled.settlement.expectedOutput,
+                minOutput: settled.settlement.minOutput,
+                realisedOutput: settled.settlement.realisedOutput,
+                realisedSlippagePct: settled.settlement.realisedSlippagePct,
+              }
+            : {}),
         },
       });
       if (settled.kind === "unsettled") {
@@ -405,6 +470,18 @@ export async function reconcileApprovedProposals(
     // the operator-facing record of this resolution, so this pass stays quiet.
     if (!updated) continue;
     resolved += 1;
+
+    if (resolution === "executed") {
+      // This swap's realised fill cannot be recovered - the balance it started
+      // from is long gone - but where the book ACTUALLY landed still can be,
+      // and that is the part an operator is looking for beside "executed".
+      assertWorkerFence();
+      const outcome = await readSettledOutcome(treasuryId, await getMarketQuote());
+      if (outcome.holdingsAfter.length > 0) {
+        reason += ` The treasury now holds ${describeHoldings(outcome.holdingsAfter)}.`;
+      }
+      if (outcome.realisedNote) reason += ` ${outcome.realisedNote}`;
+    }
 
     assertWorkerFence();
     await logActivity(

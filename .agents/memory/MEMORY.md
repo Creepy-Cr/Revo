@@ -22,3 +22,4 @@
 - [Valuation gate contract](valuation-gate-contract.md) — nothing forces a dashboard consumer to check completeness; an unqualified total turns an outage into reported losses.
 - [Worker-job test isolation](worker-job-test-isolation.md) — tests use the real dev DB and job loops span every treasury; scope stubs by id or they write into live data.
 - [Background chain settlement](background-chain-settlement.md) — persist the tx hash before broadcast, make that write the claim, and let reconcilers only read receipts.
+- [Realised fill measurement](realised-fill-measurement.md) — the fill is a balance delta carried from the planner; the post-confirmation read reports or says nothing, never zero.

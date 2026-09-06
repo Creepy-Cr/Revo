@@ -26,9 +26,15 @@ import {
 process.env.CUSTODY_MASTER_SECRET ??= "test-only-custody-master-secret";
 
 const settleRebalance = vi.fn();
+const readSettledOutcome = vi.fn();
 const getTransferRecoveryStatus = vi.fn();
 
-vi.mock("./rebalance-execution", () => ({ settleRebalance }));
+// `describeHoldings` stays real: the operator-facing copy is part of what
+// these tests are checking, not something worth restating in a stub.
+vi.mock("./rebalance-execution", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./rebalance-execution")>();
+  return { ...actual, settleRebalance, readSettledOutcome };
+});
 
 vi.mock("./arc-chain", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./arc-chain")>();
@@ -44,6 +50,33 @@ const TARGETS = [
   { symbol: "USDC", percentage: 50 },
   { symbol: "EURC", percentage: 50 },
 ];
+
+/**
+ * A settled swap as `settleRebalance` returns one: the quote it was signed
+ * against, and the fill that actually came back read from the wallet.
+ */
+function settled(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: "settled",
+    settlement: {
+      txHash: TX_HASH,
+      inputSymbol: "USDC",
+      outputSymbol: "EURC",
+      amountIn: "500",
+      expectedOutput: "425",
+      minOutput: "422.875",
+      feeTier: 3000,
+      explorerUrl: `https://explorer/${TX_HASH}`,
+      realisedOutput: "424.15",
+      realisedSlippagePct: 0.2,
+      holdingsAfter: [
+        { symbol: "USDC", units: "499.98992", percentage: 50.4 },
+        { symbol: "EURC", units: "424.15", percentage: 49.6 },
+      ],
+      ...overrides,
+    },
+  };
+}
 
 const treasuryIds: string[] = [];
 let treasuryId: string;
@@ -86,6 +119,13 @@ async function alerts() {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  // Nothing readable unless a test says otherwise: the default must be the
+  // degraded read, so no test passes by accident on invented balances.
+  readSettledOutcome.mockResolvedValue({
+    realisedOutput: null,
+    realisedSlippagePct: null,
+    holdingsAfter: [],
+  });
   treasuryId = `test-rebalance-${randomUUID()}`;
   treasuryIds.push(treasuryId);
   await db.insert(treasuriesTable).values({
@@ -115,19 +155,7 @@ describe("settling an approved proposal", () => {
       // reconciler would have to work with if this process died here.
       await claim(TX_HASH, db);
       hashAtBroadcastTime = (await proposal(id)).executionTxHash;
-      return {
-        kind: "settled",
-        settlement: {
-          txHash: TX_HASH,
-          inputSymbol: "USDC",
-          outputSymbol: "EURC",
-          amountIn: "500.000000",
-          expectedOutput: "425.000000",
-          minOutput: "422.875000",
-          feeTier: 3000,
-          explorerUrl: `https://explorer/${TX_HASH}`,
-        },
-      };
+      return settled();
     });
 
     const result = await settleApprovedProposal(treasuryId, await proposal(id), null);
@@ -135,6 +163,47 @@ describe("settling an approved proposal", () => {
     expect(hashAtBroadcastTime).toBe(TX_HASH);
     expect(result.kind).toBe("executed");
     expect(await proposal(id)).toMatchObject({ status: "executed", executionTxHash: TX_HASH });
+  });
+
+  it("logs what the rebalance achieved, not only what it aimed for", async () => {
+    const id = await seedProposal({ executionTxHash: null });
+    settleRebalance.mockResolvedValue(settled());
+
+    await settleApprovedProposal(treasuryId, await proposal(id), null);
+
+    const [logged] = await activities();
+    expect(logged).toMatchObject({ title: "Rebalance settled on Arc", txHash: TX_HASH });
+    // The fill leads, the quote is what it is measured against.
+    expect(logged!.detail).toContain("received 424.15 EURC");
+    expect(logged!.detail).toContain("against a quote of 425");
+    expect(logged!.detail).toContain("Realised slippage was 0.20% below the quote.");
+    // Where the book actually landed, beside the 50/50 that was approved.
+    expect(logged!.detail).toContain(
+      "The treasury now holds 499.98992 USDC (50.4%) and 424.15 EURC (49.6%).",
+    );
+    expect(logged!.detail).toContain("Target: 50% USDC / 50% EURC.");
+  });
+
+  it("says the fill is unknown rather than quoting the quote back as the fill", async () => {
+    const id = await seedProposal({ executionTxHash: null });
+    settleRebalance.mockResolvedValue(
+      settled({
+        realisedOutput: null,
+        realisedSlippagePct: null,
+        holdingsAfter: [],
+        realisedNote:
+          "Holdings could not be re-read after the swap confirmed (RPC timeout), so what the treasury now holds is unknown rather than unchanged.",
+      }),
+    );
+
+    await settleApprovedProposal(treasuryId, await proposal(id), null);
+
+    const [logged] = await activities();
+    // Executed, because the swap confirmed - but nothing pretends to know the fill.
+    expect(logged).toMatchObject({ status: "executed" });
+    expect(logged!.detail).not.toContain("received");
+    expect(logged!.detail).toContain("unknown rather than unchanged");
+    expect(await proposal(id)).toMatchObject({ status: "executed" });
   });
 
   it("discards the signed swap unsent when the proposal was resolved meanwhile", async () => {
@@ -188,6 +257,29 @@ describe("reconciling proposals stranded at approved", () => {
     const logged = await activities();
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({ status: "executed", txHash: TX_HASH });
+  });
+
+  it("states where the book landed when it recovers a settled swap", async () => {
+    const id = await seedProposal({ executionTxHash: TX_HASH });
+    getTransferRecoveryStatus.mockResolvedValue("success");
+    // The fill itself is unrecoverable this late - the balance it started from
+    // is gone - but what the treasury holds now is still readable.
+    readSettledOutcome.mockResolvedValue({
+      realisedOutput: null,
+      realisedSlippagePct: null,
+      holdingsAfter: [
+        { symbol: "USDC", units: "499.98992", percentage: 50.4 },
+        { symbol: "EURC", units: "424.15", percentage: 49.6 },
+      ],
+    });
+
+    expect(await reconcileApprovedProposals(treasuryId)).toBe(1);
+
+    expect(await proposal(id)).toMatchObject({ status: "executed" });
+    const [logged] = await activities();
+    expect(logged!.detail).toContain(
+      "The treasury now holds 499.98992 USDC (50.4%) and 424.15 EURC (49.6%).",
+    );
   });
 
   it("hands a reverted swap back to the operator", async () => {
