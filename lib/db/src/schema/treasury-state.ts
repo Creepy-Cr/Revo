@@ -13,13 +13,19 @@ import { doublePrecision, pgTable, text, timestamp } from "drizzle-orm/pg-core";
  * to live here at a permanent zero, alongside a stored ETH price nothing read.
  * They are gone: a column that describes a position no wallet can hold will be
  * read as a position by anyone inspecting this table.
+ *
+ * `status` and `network` are gone for the same reason. Both were written once
+ * at initialisation ("AUTONOMOUS", "Arc Testnet") and never updated again, so
+ * the console kept showing AUTO-EXECUTE after an operator switched the
+ * treasury into Safe mode. The operating mode lives in
+ * `treasury_settings.mode` - the value the approval, policy and engine guards
+ * actually enforce - and the chain name comes from the chain config, so
+ * neither has a stored copy here to fall out of date.
  */
 export const treasuryStateTable = pgTable("treasury_state", {
   id: text("id").primaryKey(),
   usdcUnits: doublePrecision("usdc_units").notNull(),
   lastUsdcPrice: doublePrecision("last_usdc_price").notNull(),
-  status: text("status").notNull(),
-  network: text("network").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

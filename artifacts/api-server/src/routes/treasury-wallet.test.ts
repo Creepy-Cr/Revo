@@ -156,8 +156,6 @@ beforeAll(async () => {
     id: TEST_TREASURY_ID,
     usdcUnits: INITIAL_USDC_UNITS,
     lastUsdcPrice: 1,
-    status: "Active",
-    network: "Arc Testnet",
   });
   const listeningServer = app.listen(0);
   server = listeningServer;

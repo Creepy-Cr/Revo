@@ -47,6 +47,7 @@ import { getMarketQuote } from "../lib/market";
 import { buildRebalancePlan, normalizeRules } from "../lib/policy-engine";
 import { buildSignals } from "../lib/signals";
 import { applyRebalance, computeDashboard, loadState, logActivity } from "../lib/state";
+import { getMode, MODE_LABEL, type OperatingMode } from "../lib/operating-mode";
 import { startProposalSettlement } from "../lib/rebalance-settlement";
 import { EXPLORER_URL } from "../lib/arc-chain";
 
@@ -59,36 +60,12 @@ const POLICY_COMPILER_MODEL = "claude-opus-5";
 /** Interactive explanations prioritize low latency while retaining strong reasoning. */
 const ARCUS_CHAT_MODEL = "claude-sonnet-5";
 
-type OperatingMode = "safe" | "managed" | "autonomous";
-
-const MODE_LABEL: Record<OperatingMode, string> = {
-  safe: "SAFE",
-  managed: "MANAGED",
-  autonomous: "AUTONOMOUS",
-};
-
 /**
  * Statuses an operator may still approve or reject. "approved" is absent on
  * purpose: it means a swap is being settled or its outcome is unresolved, and
  * re-offering it would invite a second trade against the same target.
  */
 const ACTIONABLE_PROPOSAL_STATUSES = ["pending", "simulation-ready"];
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-type DbOrTx = typeof db | Tx;
-
-async function getMode(treasuryId: string, executor: DbOrTx = db): Promise<OperatingMode> {
-  await executor
-    .insert(treasurySettingsTable)
-    .values({ id: treasuryId, mode: "managed" })
-    .onConflictDoNothing({ target: treasurySettingsTable.id });
-  const [settings] = await executor
-    .select()
-    .from(treasurySettingsTable)
-    .where(eq(treasurySettingsTable.id, treasuryId));
-  const mode = settings?.mode;
-  return mode === "safe" || mode === "autonomous" ? mode : "managed";
-}
 
 async function setMode(treasuryId: string, mode: OperatingMode): Promise<void> {
   // Takes the transition lock so a mode change is ordered strictly before or
@@ -165,16 +142,11 @@ function serializeProposal(proposal: TreasuryProposal) {
 router.get("/treasury/dashboard", requireOperator(), async (req, res): Promise<void> => {
   try {
     const treasuryId = req.operator!.treasuryId;
-    const [dashboard, mode] = await Promise.all([
-      computeDashboard(treasuryId),
-      getMode(treasuryId),
-    ]);
-    // Status reflects the operating mode; an active drill overrides it.
-    const drilled = applyDrillToDashboard(treasuryId, {
-      ...dashboard,
-      status: MODE_LABEL[mode],
-    });
-    res.json(GetTreasuryDashboardResponse.parse({ ...drilled, mode }));
+    // Both the mode and the status label come out of computeDashboard, off one
+    // read of treasury_settings, so the header badge can never contradict the
+    // mode control beside it. An active drill overlays its own status.
+    const dashboard = await computeDashboard(treasuryId);
+    res.json(GetTreasuryDashboardResponse.parse(applyDrillToDashboard(treasuryId, dashboard)));
   } catch (error) {
     req.log.error({ err: error }, "Failed to compute treasury dashboard");
     res.status(503).json({
@@ -531,9 +503,7 @@ router.post("/treasury/agent/ask", requireOperator(["viewer", "strategist", "app
         .limit(6),
     ]);
 
-    const drilled = dashboard
-      ? applyDrillToDashboard(treasuryId, { ...dashboard, status: MODE_LABEL[mode] })
-      : null;
+    const drilled = dashboard ? applyDrillToDashboard(treasuryId, dashboard) : null;
     const emergencySignal = drillSignal(treasuryId);
     const emergencyProposal = drillProposal(treasuryId);
 

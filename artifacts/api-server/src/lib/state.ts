@@ -11,7 +11,8 @@ import {
 import { getMarketQuote, referencePriceFor, type MarketQuote } from "./market";
 import { readCustodyHoldings } from "./holdings";
 import { tradableTokens } from "./arc-tokens";
-import { EXPLORER_URL } from "./arc-chain";
+import { ARC_TESTNET_CHAIN_NAME, EXPLORER_URL } from "./arc-chain";
+import { getMode, MODE_LABEL, type OperatingMode } from "./operating-mode";
 
 /**
  * Treasury state.
@@ -101,8 +102,6 @@ async function initializeState(
       id: treasuryId,
       usdcUnits: 0,
       lastUsdcPrice: quote.usdcUsd,
-      status: "AUTONOMOUS",
-      network: "Arc Testnet",
     })
     .onConflictDoNothing()
     .returning();
@@ -162,7 +161,16 @@ export interface ComputedDashboard {
   dayChange: number;
   deployed: number;
   riskScore: number;
+  /** The live operating mode, read from settings on every dashboard read. */
+  mode: OperatingMode;
+  /**
+   * The operating mode as the console badges it. Derived from `mode`, never
+   * stored: a frozen copy is what let the header claim AUTO-EXECUTE while the
+   * treasury was actually in Safe mode. An active drill overlays its own label
+   * on top of this one.
+   */
   status: string;
+  /** The chain the treasury runs on, taken from the chain config. */
   network: string;
   allocations: {
     symbol: string;
@@ -195,9 +203,13 @@ export async function computeDashboard(
   signal?: AbortSignal,
 ): Promise<ComputedDashboard> {
   const state = await loadState(treasuryId, signal);
-  const [quote, custody] = await Promise.all([
+  // The mode is read here, alongside the balances, so the status the console
+  // badges and the mode its control shows come from the same read of the same
+  // row and cannot disagree.
+  const [quote, custody, mode] = await Promise.all([
     getMarketQuote(),
     readCustodyHoldings(treasuryId, signal),
+    getMode(treasuryId),
   ]);
 
   const usdcPrice = quote?.usdcUsd ?? state.lastUsdcPrice;
@@ -334,8 +346,9 @@ export async function computeDashboard(
     dayChange,
     deployed: totalValue > 0 ? Math.round((100 - liquidPct) * 10) / 10 : 0,
     riskScore,
-    status: state.status,
-    network: state.network,
+    mode,
+    status: MODE_LABEL[mode],
+    network: ARC_TESTNET_CHAIN_NAME,
     allocations,
     portfolioHistory: history.map((snap) => ({
       label: snap.time.toISOString(),

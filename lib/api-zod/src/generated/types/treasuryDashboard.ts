@@ -23,7 +23,9 @@ export interface TreasuryDashboard {
   dayChange: number;
   deployed: number;
   riskScore: number;
+  /** The operating mode as the console badges it - SAFE, MANAGED or AUTONOMOUS - derived from `mode` on every read, with an active risk drill overlaying its own label. It is never a stored value: a copy frozen at initialisation once had the header claiming AUTO-EXECUTE while the treasury was in Safe mode and the agent could do nothing. */
   status: string;
+  /** The chain the treasury runs on, read from the server's chain config. */
   network: string;
   allocations: Allocation[];
   portfolioHistory: PortfolioPoint[];

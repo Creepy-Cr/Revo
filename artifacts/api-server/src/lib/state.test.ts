@@ -17,6 +17,7 @@ import {
   db,
   navSnapshotsTable,
   treasuriesTable,
+  treasurySettingsTable,
   treasuryStateTable,
 } from "@workspace/db";
 import { ARC_TOKENS } from "./arc-tokens";
@@ -98,8 +99,6 @@ async function seedTreasury(): Promise<string> {
     id,
     usdcUnits: LEDGER_USDC,
     lastUsdcPrice: 1,
-    status: "AUTONOMOUS",
-    network: "Arc Testnet",
   });
   await db.insert(navSnapshotsTable).values({
     id: `nav-${id}-reference`,
@@ -132,6 +131,9 @@ afterAll(async () => {
   for (const id of treasuryIds) {
     await db.delete(navSnapshotsTable).where(eq(navSnapshotsTable.treasuryId, id));
     await db.delete(agentActivitiesTable).where(eq(agentActivitiesTable.treasuryId, id));
+    // computeDashboard reads the operating mode, which materialises a settings
+    // row on first read.
+    await db.delete(treasurySettingsTable).where(eq(treasurySettingsTable.id, id));
     await db.delete(treasuryStateTable).where(eq(treasuryStateTable.id, id));
     await db.delete(treasuriesTable).where(eq(treasuriesTable.id, id));
   }

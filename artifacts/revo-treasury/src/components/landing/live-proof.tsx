@@ -29,7 +29,9 @@ const SEEDED_DASHBOARD: TreasuryDashboard = {
   dayChange: 1.42,
   deployed: 61.8,
   riskScore: 74,
-  status: 'OPERATIONAL',
+  // status is the operating mode as the console badges it, so the mock shows
+  // a label the real dashboard can actually return for the mode beside it.
+  status: 'MANAGED',
   network: 'Arc Testnet',
   mode: 'managed',
   allocations: [
