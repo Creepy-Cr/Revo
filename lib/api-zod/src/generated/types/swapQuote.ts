@@ -7,40 +7,59 @@
  */
 
 export interface SwapQuote {
+  /** Venue the quote was read from */
+  venue: string;
   inputSymbol: string;
   outputSymbol: string;
   /** Human amount requested, echoed back unchanged */
   inputAmount: string;
-  /** Real base units computed by Revo from its own pinned decimals. The venue's echoed amount is deliberately not used, because Tower scales by 10^(18-decimals) rather than 10^decimals. */
+  /** Real base units computed by Revo from its own pinned decimals */
   inputBaseUnits: string;
   /**
-     * Expected output, indicative only
+     * Output the pool quoted on-chain
      * @nullable
      */
-  indicativeOutput: string | null;
+  expectedOutput: string | null;
   /**
-     * Venue's minimum-output floor, indicative only
+     * Execution floor derived locally from the quote and the slippage tolerance. Never taken from a third party.
      * @nullable
      */
-  indicativeMinOut: string | null;
+  minOutput: string | null;
   /**
-     * Output units per input unit implied by the quote
+     * Output units per input unit the pool would actually give
      * @nullable
      */
   impliedRate: number | null;
-  /** @nullable */
+  /**
+     * The same rate implied by real-world prices, for comparison
+     * @nullable
+     */
+  referenceRate: number | null;
+  /**
+     * How far the pool sits from the real market, as a percentage
+     * @nullable
+     */
+  deviationPct: number | null;
+  /**
+     * Measured here by comparing the order against a dust-sized quote on the same pool, not a figure reported by the venue.
+     * @nullable
+     */
   priceImpactPct: number | null;
+  /**
+     * Uniswap v3 fee tier of the pool chosen, in hundredths of a bip
+     * @nullable
+     */
+  feeTier: number | null;
   /** @nullable */
-  feeBps: number | null;
-  /** @nullable */
-  slippageBps: number | null;
-  /** @nullable */
-  gasEstimate: string | null;
-  /** @nullable */
-  dexName: string | null;
-  /** @nullable */
-  routerAddress: string | null;
-  routePath: string[];
+  poolAddress: string | null;
+  /**
+     * Output-side token balance held by the pool
+     * @nullable
+     */
+  poolLiquidityOut: string | null;
+  slippageBps: number;
+  routerAddress: string;
+  chainId: number;
   /** False whenever the route must not be signed */
   tradable: boolean;
   /** Why the route is not tradable */

@@ -57,6 +57,10 @@ export const GetChainParamsResponse = zod.object({
  */
 export const GetTreasuryDashboardResponse = zod.object({
   "totalValue": zod.number(),
+  "valuation": zod.object({
+  "complete": zod.boolean(),
+  "note": zod.string().optional().describe('Why the valuation is incomplete, shown to the operator')
+}).describe('Whether totalValue can be trusted. It is complete only when every allocation row is a live on-chain balance with a known reference price. When incomplete the total understates the treasury, so it is not written to NAV history, dayChange is suppressed, and the drawdown monitor stays idle rather than reading an outage as a loss.'),
   "funded": zod.boolean().describe('True once the treasury has ever received a confirmed on-chain deposit. Durable first-run predicate - unlike totalValue (which is rounded and can read 0 for a small funded balance), this never flips back to false.'),
   "mode": zod.string().describe('safe | managed | autonomous'),
   "dayChange": zod.number(),
@@ -69,7 +73,11 @@ export const GetTreasuryDashboardResponse = zod.object({
   "name": zod.string(),
   "percentage": zod.number(),
   "value": zod.number(),
-  "tone": zod.string()
+  "tone": zod.string(),
+  "source": zod.string().describe('Where the balance came from. \"onchain\" is a live custody-wallet balance read from Arc. \"accounting\" means the chain could not be read and the figure is the deposit ledger\'s record instead. \"simulated\" is a drill overlay, which rewrites percentages and values without any asset moving. The UI must label these from this field rather than inferring from the symbol.'),
+  "tradable": zod.boolean().describe('Whether Revo can route a trade in this asset on Arc Testnet'),
+  "units": zod.number().describe('Token units held, as opposed to their dollar value'),
+  "untradableReason": zod.string().optional().describe('Why the asset is held and priced but never traded')
 })),
   "portfolioHistory": zod.array(zod.object({
   "label": zod.string(),
@@ -713,19 +721,26 @@ export const SetOperatorRoleResponse = zod.object({
  * @summary Report whether a real on-chain swap venue is usable on Arc Testnet
  */
 export const GetTreasurySwapVenueResponse = zod.object({
-  "venue": zod.string().describe('Which venue was probed'),
+  "venue": zod.string().describe('Which venue trades actually execute on'),
   "chainId": zod.number(),
   "network": zod.string(),
-  "configured": zod.boolean().describe('Whether venue credentials are present. Never reveals them.'),
-  "registryAvailable": zod.boolean().describe('Whether the venue\'s chain and token registry could be read'),
-  "arcSupportsSwaps": zod.boolean().describe('Whether the venue still advertises swap support on Arc Testnet'),
+  "routerAddress": zod.string().describe('Router contract a signed swap would go through'),
+  "configured": zod.boolean().describe('Whether the venue-catalogue credentials are present. The catalogue is used to validate token addresses, not to quote. Never reveals the key.'),
+  "registryAvailable": zod.boolean().describe('Whether the venue catalogue could be read'),
+  "arcSupportsSwaps": zod.boolean().describe('Whether the catalogue still advertises swap support on Arc Testnet'),
+  "rpcReachable": zod.boolean().describe('Whether Arc\'s RPC answered'),
+  "contractsDeployed": zod.boolean().describe('Whether the factory, quoter and router all have code on Arc'),
+  "blockNumber": zod.string().nullable().describe('Arc block height at the time of the check'),
   "swapEnabled": zod.boolean().describe('True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed.'),
   "tokens": zod.array(zod.object({
   "symbol": zod.string(),
+  "name": zod.string(),
   "address": zod.string(),
   "decimals": zod.number(),
-  "role": zod.string().describe('stable | risk')
-})).describe('Tokens Revo has approved for trading on this venue'),
+  "role": zod.string().describe('stable | risk'),
+  "tradable": zod.boolean().describe('Whether Revo will route a trade in this token. False is a Revo decision about pool quality, not a venue capability.'),
+  "untradableReason": zod.string().optional().describe('Why the token is held and priced but never traded')
+})).describe('Tokens Revo has pinned, tradable or otherwise'),
   "reason": zod.string().optional().describe('Why swapping is unavailable, when it is'),
   "checkedAt": zod.coerce.date()
 })
@@ -741,20 +756,23 @@ export const QuoteTreasurySwapBody = zod.object({
 })
 
 export const QuoteTreasurySwapResponse = zod.object({
+  "venue": zod.string().describe('Venue the quote was read from'),
   "inputSymbol": zod.string(),
   "outputSymbol": zod.string(),
   "inputAmount": zod.string().describe('Human amount requested, echoed back unchanged'),
-  "inputBaseUnits": zod.string().describe('Real base units computed by Revo from its own pinned decimals. The venue\'s echoed amount is deliberately not used, because Tower scales by 10^(18-decimals) rather than 10^decimals.'),
-  "indicativeOutput": zod.string().nullable().describe('Expected output, indicative only'),
-  "indicativeMinOut": zod.string().nullable().describe('Venue\'s minimum-output floor, indicative only'),
-  "impliedRate": zod.number().nullable().describe('Output units per input unit implied by the quote'),
-  "priceImpactPct": zod.number().nullable(),
-  "feeBps": zod.number().nullable(),
-  "slippageBps": zod.number().nullable(),
-  "gasEstimate": zod.string().nullable(),
-  "dexName": zod.string().nullable(),
-  "routerAddress": zod.string().nullable(),
-  "routePath": zod.array(zod.string()),
+  "inputBaseUnits": zod.string().describe('Real base units computed by Revo from its own pinned decimals'),
+  "expectedOutput": zod.string().nullable().describe('Output the pool quoted on-chain'),
+  "minOutput": zod.string().nullable().describe('Execution floor derived locally from the quote and the slippage tolerance. Never taken from a third party.'),
+  "impliedRate": zod.number().nullable().describe('Output units per input unit the pool would actually give'),
+  "referenceRate": zod.number().nullable().describe('The same rate implied by real-world prices, for comparison'),
+  "deviationPct": zod.number().nullable().describe('How far the pool sits from the real market, as a percentage'),
+  "priceImpactPct": zod.number().nullable().describe('Measured here by comparing the order against a dust-sized quote on the same pool, not a figure reported by the venue.'),
+  "feeTier": zod.number().nullable().describe('Uniswap v3 fee tier of the pool chosen, in hundredths of a bip'),
+  "poolAddress": zod.string().nullable(),
+  "poolLiquidityOut": zod.string().nullable().describe('Output-side token balance held by the pool'),
+  "slippageBps": zod.number(),
+  "routerAddress": zod.string(),
+  "chainId": zod.number(),
   "tradable": zod.boolean().describe('False whenever the route must not be signed'),
   "reason": zod.string().optional().describe('Why the route is not tradable'),
   "warnings": zod.array(zod.string()).describe('Non-fatal concerns an operator should see before approving'),

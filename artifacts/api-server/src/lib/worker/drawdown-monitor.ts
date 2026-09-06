@@ -56,7 +56,14 @@ async function processTreasury(treasuryId: string, signal: AbortSignal): Promise
 
   let nav: number;
   try {
-    nav = (await computeDashboard(treasuryId, signal)).totalValue;
+    const dashboard = await computeDashboard(treasuryId, signal);
+    // An incomplete valuation understates NAV, and understated NAV is exactly
+    // what a drawdown looks like. Staying idle through an outage is correct:
+    // the alternative is a critical breach alert caused by an unreachable RPC.
+    if (!dashboard.valuation.complete) {
+      return `Valuation incomplete; monitor idle (${dashboard.valuation.note ?? "unknown reason"})`;
+    }
+    nav = dashboard.totalValue;
   } catch {
     return "Treasury state unavailable; monitor idle";
   }

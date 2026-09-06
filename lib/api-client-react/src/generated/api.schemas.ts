@@ -54,6 +54,14 @@ export interface Allocation {
   percentage: number;
   value: number;
   tone: string;
+  /** Where the balance came from. "onchain" is a live custody-wallet balance read from Arc. "accounting" means the chain could not be read and the figure is the deposit ledger's record instead. "simulated" is a drill overlay, which rewrites percentages and values without any asset moving. The UI must label these from this field rather than inferring from the symbol. */
+  source: string;
+  /** Whether Revo can route a trade in this asset on Arc Testnet */
+  tradable: boolean;
+  /** Token units held, as opposed to their dollar value */
+  units: number;
+  /** Why the asset is held and priced but never traded */
+  untradableReason?: string;
 }
 
 export interface PortfolioPoint {
@@ -100,8 +108,19 @@ export interface DrillStatus {
   startedAt: string | null;
 }
 
+/**
+ * Whether totalValue can be trusted. It is complete only when every allocation row is a live on-chain balance with a known reference price. When incomplete the total understates the treasury, so it is not written to NAV history, dayChange is suppressed, and the drawdown monitor stays idle rather than reading an outage as a loss.
+ */
+export type TreasuryDashboardValuation = {
+  complete: boolean;
+  /** Why the valuation is incomplete, shown to the operator */
+  note?: string;
+};
+
 export interface TreasuryDashboard {
   totalValue: number;
+  /** Whether totalValue can be trusted. It is complete only when every allocation row is a live on-chain balance with a known reference price. When incomplete the total understates the treasury, so it is not written to NAV history, dayChange is suppressed, and the drawdown monitor stays idle rather than reading an outage as a loss. */
+  valuation: TreasuryDashboardValuation;
   /** True once the treasury has ever received a confirmed on-chain deposit. Durable first-run predicate - unlike totalValue (which is rounded and can read 0 for a small funded balance), this never flips back to false. */
   funded: boolean;
   /** safe | managed | autonomous */
@@ -505,26 +524,42 @@ export interface OperatorRoleInput {
 
 export interface SwapVenueToken {
   symbol: string;
+  name: string;
   address: string;
   decimals: number;
   /** stable | risk */
   role: string;
+  /** Whether Revo will route a trade in this token. False is a Revo decision about pool quality, not a venue capability. */
+  tradable: boolean;
+  /** Why the token is held and priced but never traded */
+  untradableReason?: string;
 }
 
 export interface SwapVenueStatus {
-  /** Which venue was probed */
+  /** Which venue trades actually execute on */
   venue: string;
   chainId: number;
   network: string;
-  /** Whether venue credentials are present. Never reveals them. */
+  /** Router contract a signed swap would go through */
+  routerAddress: string;
+  /** Whether the venue-catalogue credentials are present. The catalogue is used to validate token addresses, not to quote. Never reveals the key. */
   configured: boolean;
-  /** Whether the venue's chain and token registry could be read */
+  /** Whether the venue catalogue could be read */
   registryAvailable: boolean;
-  /** Whether the venue still advertises swap support on Arc Testnet */
+  /** Whether the catalogue still advertises swap support on Arc Testnet */
   arcSupportsSwaps: boolean;
+  /** Whether Arc's RPC answered */
+  rpcReachable: boolean;
+  /** Whether the factory, quoter and router all have code on Arc */
+  contractsDeployed: boolean;
+  /**
+     * Arc block height at the time of the check
+     * @nullable
+     */
+  blockNumber: string | null;
   /** True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed. */
   swapEnabled: boolean;
-  /** Tokens Revo has approved for trading on this venue */
+  /** Tokens Revo has pinned, tradable or otherwise */
   tokens: SwapVenueToken[];
   /** Why swapping is unavailable, when it is */
   reason?: string;
@@ -539,40 +574,59 @@ export interface SwapQuoteInput {
 }
 
 export interface SwapQuote {
+  /** Venue the quote was read from */
+  venue: string;
   inputSymbol: string;
   outputSymbol: string;
   /** Human amount requested, echoed back unchanged */
   inputAmount: string;
-  /** Real base units computed by Revo from its own pinned decimals. The venue's echoed amount is deliberately not used, because Tower scales by 10^(18-decimals) rather than 10^decimals. */
+  /** Real base units computed by Revo from its own pinned decimals */
   inputBaseUnits: string;
   /**
-     * Expected output, indicative only
+     * Output the pool quoted on-chain
      * @nullable
      */
-  indicativeOutput: string | null;
+  expectedOutput: string | null;
   /**
-     * Venue's minimum-output floor, indicative only
+     * Execution floor derived locally from the quote and the slippage tolerance. Never taken from a third party.
      * @nullable
      */
-  indicativeMinOut: string | null;
+  minOutput: string | null;
   /**
-     * Output units per input unit implied by the quote
+     * Output units per input unit the pool would actually give
      * @nullable
      */
   impliedRate: number | null;
-  /** @nullable */
+  /**
+     * The same rate implied by real-world prices, for comparison
+     * @nullable
+     */
+  referenceRate: number | null;
+  /**
+     * How far the pool sits from the real market, as a percentage
+     * @nullable
+     */
+  deviationPct: number | null;
+  /**
+     * Measured here by comparing the order against a dust-sized quote on the same pool, not a figure reported by the venue.
+     * @nullable
+     */
   priceImpactPct: number | null;
+  /**
+     * Uniswap v3 fee tier of the pool chosen, in hundredths of a bip
+     * @nullable
+     */
+  feeTier: number | null;
   /** @nullable */
-  feeBps: number | null;
-  /** @nullable */
-  slippageBps: number | null;
-  /** @nullable */
-  gasEstimate: string | null;
-  /** @nullable */
-  dexName: string | null;
-  /** @nullable */
-  routerAddress: string | null;
-  routePath: string[];
+  poolAddress: string | null;
+  /**
+     * Output-side token balance held by the pool
+     * @nullable
+     */
+  poolLiquidityOut: string | null;
+  slippageBps: number;
+  routerAddress: string;
+  chainId: number;
   /** False whenever the route must not be signed */
   tradable: boolean;
   /** Why the route is not tradable */

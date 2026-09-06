@@ -287,7 +287,7 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
         sources: normalized.map((c) => c.source),
         confidence: Math.round(clamp(58 + normalized.length * 16, 58, 92)),
         time: quote && quote.stale ? new Date(quote.fetchedAt).toISOString() : now,
-        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} guarding the stablecoin reserve sleeves (USDC, aUSDC, sUSDC). Each component score below is computed from actually fetched data.`,
+        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} guarding the USDC reserve. Each component score below is computed from actually fetched data.`,
         components: normalized,
       });
     }

@@ -66,41 +66,20 @@ const MAX_PRICE_IMPACT_PCT = 5;
  */
 const MAX_REFERENCE_DEVIATION_PCT = 25;
 
-export interface ArcToken {
-  symbol: string;
-  address: `0x${string}`;
-  decimals: number;
-  /** How the treasury treats this leg: the stable side or the risk side. */
-  role: "stable" | "risk";
-}
-
 /**
- * Token identities Revo pins for itself.
- *
- * Tower's registry is consulted at runtime but checked against these rather
- * than trusted. An address that changes underneath us is a reason to stop
- * trading, not a reason to follow it to a new contract.
+ * Token identities live in `arc-tokens` because both this module and the
+ * Synthra venue check venue-reported addresses against the same pinned set.
+ * Re-exported here so existing callers keep working.
  */
-export const ARC_TRADED_TOKENS: Record<string, ArcToken> = {
-  USDC: {
-    symbol: "USDC",
-    address: "0x3600000000000000000000000000000000000000",
-    decimals: 6,
-    role: "stable",
-  },
-  cirBTC: {
-    symbol: "cirBTC",
-    address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
-    decimals: 8,
-    role: "risk",
-  },
-};
+export {
+  ARC_TRADED_TOKENS,
+  ARC_TOKENS,
+  isTradedSymbol,
+  type ArcToken,
+  type TradedSymbol,
+} from "./arc-tokens";
 
-export type TradedSymbol = keyof typeof ARC_TRADED_TOKENS;
-
-export function isTradedSymbol(symbol: string): symbol is TradedSymbol {
-  return Object.prototype.hasOwnProperty.call(ARC_TRADED_TOKENS, symbol);
-}
+import { ARC_TRADED_TOKENS, isTradedSymbol } from "./arc-tokens";
 
 /** True when a Tower API key is configured. Never reveals the key itself. */
 export function isTowerConfigured(): boolean {

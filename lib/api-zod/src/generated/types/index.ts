@@ -51,6 +51,7 @@ export * from './swapVenueStatus';
 export * from './swapVenueToken';
 export * from './treasuryCommandInput';
 export * from './treasuryDashboard';
+export * from './treasuryDashboardValuation';
 export * from './treasuryProposal';
 export * from './treasuryWalletInfo';
 export * from './walletAddressInput';

@@ -53,7 +53,13 @@ export function normalizeRules(raw: {
   };
 }
 
-const ETH_BY_RISK: Record<PolicyRules["riskTolerance"], number> = {
+/**
+ * Size of the directional sleeve by risk tolerance. On Arc Testnet the only
+ * risk asset Revo can actually route is EURC - cirBTC is priced and held but
+ * has no tradable liquidity - so the sleeve is expressed in EURC rather than in
+ * a yield vault that does not exist here.
+ */
+const RISK_SLEEVE_BY_RISK: Record<PolicyRules["riskTolerance"], number> = {
   low: 4,
   medium: 10,
   high: 16,
@@ -66,32 +72,20 @@ const ETH_BY_RISK: Record<PolicyRules["riskTolerance"], number> = {
 export function computeTargets(rules: PolicyRules): AllocationTarget[] {
   // Directional sleeve sized by risk tolerance, tightened by the drawdown
   // limit, and never above the single-allocation cap.
-  const eth = Math.min(
-    ETH_BY_RISK[rules.riskTolerance],
+  const sleeve = Math.min(
+    RISK_SLEEVE_BY_RISK[rules.riskTolerance],
     Math.max(0, Math.round(rules.drawdownLimitPct * 0.8)),
     rules.maxAllocationPct,
   );
 
   const reserveMin = Math.max(rules.stablecoinReserveMinPct, HARD_MIN_LIQUID_RESERVE_PCT);
 
-  // Yield vault takes what the reserve floor and sleeve leave, capped.
-  const vault = Math.min(rules.maxAllocationPct, Math.max(0, 100 - reserveMin - eth));
-
-  // Remaining stable capital is split between liquid USDC and the safe
-  // reserve, keeping the liquid floor intact.
-  const stable = 100 - eth - vault;
-  let usdc = Math.max(HARD_MIN_LIQUID_RESERVE_PCT, Math.round(stable * 0.45));
-  let sUsdc = stable - usdc;
-  if (sUsdc < 0) {
-    usdc = stable;
-    sUsdc = 0;
-  }
+  // The reserve floor wins over the sleeve whenever the two collide.
+  const eurc = Math.min(sleeve, Math.max(0, 100 - reserveMin));
 
   return [
-    { symbol: "USDC", percentage: usdc },
-    { symbol: "aUSDC", percentage: vault },
-    { symbol: "sUSDC", percentage: sUsdc },
-    { symbol: "ETH", percentage: eth },
+    { symbol: "USDC", percentage: 100 - eurc },
+    { symbol: "EURC", percentage: eurc },
   ];
 }
 
@@ -132,15 +126,15 @@ export function buildRebalancePlan(
     .join(" \u00b7 ");
 
   const reserveMin = Math.max(rules.stablecoinReserveMinPct, HARD_MIN_LIQUID_RESERVE_PCT);
-  const ethTarget = targets.find((t) => t.symbol === "ETH")?.percentage ?? 0;
+  const sleeveTarget = targets.find((t) => t.symbol === "EURC")?.percentage ?? 0;
 
   return {
     targets,
-    action: `Simulated rebalance to policy targets \u2014 ${action}`,
+    action: `Rebalance to policy targets: ${action}`,
     safetyChecks: [
-      `Single-protocol cap ${rules.maxAllocationPct}% enforced (DAO hard cap ${HARD_MAX_ALLOCATION_PCT}%)`,
+      `Single-allocation cap ${rules.maxAllocationPct}% enforced (DAO hard cap ${HARD_MAX_ALLOCATION_PCT}%)`,
       `Stablecoin reserve floor ${reserveMin}% maintained after rebalance`,
-      `Drawdown limit ${rules.drawdownLimitPct}% respected \u2014 directional sleeve sized to ${ethTarget}%`,
+      `Drawdown limit ${rules.drawdownLimitPct}% respected, directional sleeve sized to ${sleeveTarget}%`,
     ],
   };
 }

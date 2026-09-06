@@ -109,11 +109,15 @@ interface DashboardLike {
 }
 
 /** Target allocation once the emergency exit completes. */
+/**
+ * Where an emergency rotation parks the book: everything into the stable leg.
+ * Keyed by the real Arc tokens the treasury can actually hold, so a drill
+ * rotates the same assets the dashboard reports rather than invented sleeves.
+ */
 const SAFE_TARGETS: Record<string, number> = {
-  USDC: 30,
-  aUSDC: 0,
-  sUSDC: 70,
-  ETH: 0,
+  USDC: 100,
+  EURC: 0,
+  cirBTC: 0,
 };
 
 const lerp = (from: number, to: number, r: number) => from + (to - from) * r;
@@ -149,10 +153,11 @@ export function applyDrillToDashboard<T extends DashboardLike>(
       ...alloc,
       percentage,
       value: Math.round((totalValue * percentage) / 100),
+      // The drill moves no assets, so these rows stop claiming to be live
+      // custody balances the moment the overlay rewrites them.
+      source: "simulated",
       name:
-        alloc.symbol === "sUSDC" && r === 1
-          ? "USDC safe reserve: funds secured"
-          : alloc.name,
+        alloc.symbol === "USDC" && r === 1 ? "Liquid reserve: funds secured" : alloc.name,
     };
   });
 
@@ -222,7 +227,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
     time: iso(0),
     title: "DRILL: Critical exploit alert received",
     detail:
-      "Security feeds flag an active exploit draining the Arc lending vault. New deployments frozen instantly. (Simulated drill signal, no real event.)",
+      "Feeds flag a sharp depeg on the EURC sleeve. New deployments frozen instantly. (Simulated drill signal, no real event.)",
     status: "error",
     kind: "simulated",
   });
@@ -233,7 +238,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
       time: iso(ALERT_END_MS),
       title: "Emergency exit proposal drafted",
       detail:
-        "Risk score 88 breached the 'Emergency exit threshold (Risk 80+)' guardrail. Agent auto-drafted a rotation of all at-risk capital into the USDC safe reserve.",
+        "Risk score 88 breached the 'Emergency exit threshold (Risk 80+)' guardrail. Agent auto-drafted a rotation of all at-risk capital into the USDC reserve.",
       status: elapsed >= PROPOSAL_END_MS ? "executed" : "processing",
       kind: "simulated",
     });
@@ -243,9 +248,9 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
     events.push({
       id: "drill-rotating",
       time: iso(PROPOSAL_END_MS),
-      title: "Rotating funds to USDC safe reserve",
+      title: "Rotating funds to the USDC reserve",
       detail:
-        "Unwinding the aUSDC lending position and ETH sleeve into sUSDC/USDC inside the guarded testnet simulation.",
+        "Unwinding the EURC sleeve back into USDC inside the guarded testnet drill. No live order is sent.",
       status: secured ? "executed" : "processing",
       kind: "simulated",
     });
@@ -257,7 +262,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
       time: iso(ROTATION_END_MS),
       title: "Funds secured. Drill complete",
       detail:
-        "100% of at-risk capital now sits in the USDC safe reserve. Treasury holds in safe mode until the drill is reset.",
+        "100% of at-risk capital now sits in the USDC reserve. Treasury holds in safe mode until the drill is reset.",
       status: "verified",
       kind: "simulated",
     });
@@ -272,10 +277,10 @@ export function drillSignal(treasuryId: string) {
   if (!runtime) return null;
   return {
     id: "sig-drill",
-    asset: "aUSDC",
+    asset: "EURC",
     score: 8,
     direction: "sell",
-    title: "DRILL: Active exploit on Arc lending vault",
+    title: "DRILL: Simulated depeg event on the EURC sleeve",
     sources: ["Security feeds", "On-chain", "Governance"],
     confidence: 96,
     time: new Date(runtime.startedAt).toISOString(),
@@ -287,7 +292,7 @@ export function drillSignal(treasuryId: string) {
         label: "Exploit alert",
         score: -96,
         weight: 0.5,
-        detail: "Drill scenario: active exploit flagged draining Arc lending vault liquidity (simulated).",
+        detail: "Drill scenario: sharp depeg flagged on the EURC sleeve (simulated).",
       },
       {
         source: "On-chain",
@@ -318,16 +323,16 @@ export function drillProposal(treasuryId: string) {
 
   return {
     id: runtime.proposalId,
-    title: "[DRILL] Emergency exit to USDC safe reserve",
+    title: "[DRILL] Emergency exit to the USDC reserve",
     summary:
-      "A critical exploit signal on the Arc lending vault breached the Risk 80+ emergency threshold. Per the DAO mandate, the agent rotates every at-risk position into the whitelisted USDC safe reserve.",
+      "A critical depeg signal on the EURC sleeve breached the Risk 80+ emergency threshold. Per the DAO mandate, the agent rotates every at-risk position back into USDC.",
     status,
     createdAt: new Date(runtime.startedAt + ALERT_END_MS).toISOString(),
     action:
-      "Rotate 34% aUSDC and 13% ETH into the safe reserve. Target: 70% sUSDC, 30% liquid USDC. Freeze all new deployments until all-clear.",
+      "Rotate the full EURC sleeve into USDC. Target: 100% liquid USDC. Freeze all new deployments until all-clear.",
     safetyChecks: [
       "Emergency exit threshold (Risk 80+) breached. Auto-exit pre-authorized by DAO mandate",
-      "Destination restricted to the whitelisted USDC safe reserve",
+      "Destination restricted to the whitelisted USDC reserve",
       "Testnet drill only. No mainnet keys, no real funds moved",
     ],
     command: "SYSTEM DRILL: simulated protocol exploit response",

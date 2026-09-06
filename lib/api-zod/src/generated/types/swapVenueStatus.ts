@@ -8,19 +8,30 @@
 import type { SwapVenueToken } from './swapVenueToken';
 
 export interface SwapVenueStatus {
-  /** Which venue was probed */
+  /** Which venue trades actually execute on */
   venue: string;
   chainId: number;
   network: string;
-  /** Whether venue credentials are present. Never reveals them. */
+  /** Router contract a signed swap would go through */
+  routerAddress: string;
+  /** Whether the venue-catalogue credentials are present. The catalogue is used to validate token addresses, not to quote. Never reveals the key. */
   configured: boolean;
-  /** Whether the venue's chain and token registry could be read */
+  /** Whether the venue catalogue could be read */
   registryAvailable: boolean;
-  /** Whether the venue still advertises swap support on Arc Testnet */
+  /** Whether the catalogue still advertises swap support on Arc Testnet */
   arcSupportsSwaps: boolean;
+  /** Whether Arc's RPC answered */
+  rpcReachable: boolean;
+  /** Whether the factory, quoter and router all have code on Arc */
+  contractsDeployed: boolean;
+  /**
+     * Arc block height at the time of the check
+     * @nullable
+     */
+  blockNumber: string | null;
   /** True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed. */
   swapEnabled: boolean;
-  /** Tokens Revo has approved for trading on this venue */
+  /** Tokens Revo has pinned, tradable or otherwise */
   tokens: SwapVenueToken[];
   /** Why swapping is unavailable, when it is */
   reason?: string;

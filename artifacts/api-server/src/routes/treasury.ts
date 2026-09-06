@@ -276,14 +276,19 @@ router.put("/treasury/mode", requireOperator(["guardian"]), async (req, res): Pr
 router.post("/treasury/drill/start", requireOperator(["strategist", "approver", "guardian"]), async (req, res, next) => {
   try {
     // A drill simulates an emergency rotation of the treasury's holdings -
-    // with nothing deposited there is nothing to rotate, and running one
-    // would fabricate risk/deployment numbers out of thin air.
+    // with nothing held there is nothing to rotate, and running one would
+    // fabricate risk/deployment numbers out of thin air. Eligibility is judged
+    // on the live custody balance, so a wallet funded in EURC or cirBTC counts
+    // and an unreadable chain blocks the drill instead of guessing.
     const treasuryId = req.operator!.treasuryId;
-    const state = await loadState(treasuryId);
-    const total =
-      (state.usdcUnits + state.aUsdcUnits + state.sUsdcUnits) * state.lastUsdcPrice +
-      state.ethUnits * state.lastEthPrice;
-    if (total <= 0) {
+    const dashboard = await computeDashboard(treasuryId);
+    if (!dashboard.valuation.complete) {
+      res.status(503).json({
+        error: `Holdings could not be confirmed, so a drill would run against unknown balances. ${dashboard.valuation.note ?? ""}`.trim(),
+      });
+      return;
+    }
+    if (dashboard.totalValue <= 0) {
       res.status(409).json({
         error: "The treasury is empty. Deposit testnet USDC before arming a drill.",
       });
@@ -635,8 +640,7 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
   const treasuryId = req.operator!.treasuryId;
 
   // Market quote is fetched OUTSIDE the transaction (network call); prices
-  // are not guarded state, and applyRebalance conserves total value at
-  // whatever price it uses.
+  // are not guarded state, and applyRebalance only marks the book at them.
   const quote = await getMarketQuote();
 
   // The whole activation - mode check, draft claim, supersession, stale
@@ -730,8 +734,8 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
       });
 
       if (autonomous) {
-        // The auto-executed proposal and its holdings write commit together:
-        // if the rebalance fails, the insert (and the activation) roll back.
+        // The proposal and its target validation commit together: if the
+        // targets are unroutable, the insert (and the activation) roll back.
         await applyRebalance(tx, treasuryId, plan.targets, quote);
       }
     }
@@ -806,18 +810,18 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
   } else if (autonomous) {
     await logActivity(
       treasuryId,
-      "Auto-approved rebalance executed (simulated)",
-      `Autonomous mode applied the "${activated.name}" targets: ${plan.action}`,
-      "executed",
-      "simulated",
+      "Auto-approved rebalance target recorded",
+      `Autonomous mode accepted the "${activated.name}" targets: ${plan.action}. Holdings move only once a swap settles on Arc.`,
+      "processing",
+      "system",
     );
   } else {
     await logActivity(
       treasuryId,
       `Policy "${activated.name}" activated. Rebalance proposed`,
-      "The engine drafted a rebalance to the policy targets. Approve it to execute the simulation.",
+      "The engine drafted a rebalance to the policy targets. Approve it to record the target.",
       "processing",
-      "simulated",
+      "system",
     );
   }
   if (proposalId) {
@@ -989,18 +993,18 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
   if (executed.targetAllocations && executed.targetAllocations.length > 0) {
     await logActivity(
       treasuryId,
-      "Approved rebalance executed (simulated)",
-      `Operator approved "${executed.title}". Applied: ${executed.action}`,
+      "Approved rebalance target recorded",
+      `Operator approved "${executed.title}". Target: ${executed.action}. Holdings move only once a swap settles on Arc.`,
       "executed",
-      "simulated",
+      "system",
     );
   } else {
     await logActivity(
       treasuryId,
       `Proposal "${executed.title}" approved`,
-      "Marked as executed in the simulation log. No allocation targets were attached.",
+      "Approved with no allocation targets attached, so nothing was recorded against the book.",
       "executed",
-      "simulated",
+      "system",
     );
   }
 
@@ -1013,7 +1017,7 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
     resourceId: proposalId,
     result: "ok",
   });
-  req.log.info({ proposalId }, "Proposal approved and simulated rebalance applied");
+  req.log.info({ proposalId }, "Proposal approved and rebalance target recorded");
   res.json(ApproveTreasuryProposalResponse.parse(serializeProposal(executed)));
 });
 

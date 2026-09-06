@@ -8,8 +8,13 @@
 
 export interface SwapVenueToken {
   symbol: string;
+  name: string;
   address: string;
   decimals: number;
   /** stable | risk */
   role: string;
+  /** Whether Revo will route a trade in this token. False is a Revo decision about pool quality, not a venue capability. */
+  tradable: boolean;
+  /** Why the token is held and priced but never traded */
+  untradableReason?: string;
 }

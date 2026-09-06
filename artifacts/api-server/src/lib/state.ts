@@ -8,16 +8,32 @@ import {
   treasuryStateTable,
   type TreasuryState,
 } from "@workspace/db";
-import { getMarketQuote, type MarketQuote } from "./market";
+import { getMarketQuote, referencePriceFor, type MarketQuote } from "./market";
+import { readCustodyHoldings } from "./holdings";
+import { tradableTokens } from "./arc-tokens";
 
 /**
- * DB-backed treasury simulation state.
+ * Treasury state.
  *
- * The treasury holds units (USDC, aUSDC, sUSDC, ETH). Dollar values are
- * computed at read time from live market quotes, NAV snapshots accumulate in
- * the database, and the activity log records real events (initialization,
- * proposals, drills). Nothing served from the dashboard is hardcoded.
+ * Composition is read from the custody wallet on Arc Testnet - the tokens the
+ * treasury actually holds - and priced at read time from live market quotes.
+ * NAV snapshots accumulate in the database and the activity log records real
+ * events. Nothing served from the dashboard is hardcoded, and no allocation row
+ * exists unless a real token backs it.
  */
+
+/** Short display labels for the pinned Arc tokens. */
+const ALLOCATION_LABELS: Record<string, string> = {
+  USDC: "Liquid reserve",
+  EURC: "Euro exposure",
+  cirBTC: "Bitcoin exposure",
+};
+
+const ALLOCATION_TONES: Record<string, string> = {
+  USDC: "cyan",
+  EURC: "violet",
+  cirBTC: "amber",
+};
 
 const SNAPSHOT_THROTTLE_MS = 5 * 60_000;
 const HISTORY_LIMIT = 96;
@@ -127,6 +143,13 @@ export async function loadState(treasuryId: string, signal?: AbortSignal): Promi
 export interface ComputedDashboard {
   totalValue: number;
   /**
+   * Whether totalValue can be trusted. Complete only when every allocation row
+   * is a live on-chain balance with a known reference price. An incomplete
+   * valuation understates the treasury, which is indistinguishable from a
+   * drawdown, so callers must not snapshot it or alert on it.
+   */
+  valuation: { complete: boolean; note?: string };
+  /**
    * True once any confirmed deposit has ever landed. The console's first-run
    * activation gate keys off this, NOT totalValue - totalValue is rounded, so
    * a small funded balance (< $0.50) would otherwise read 0 and hide the real
@@ -138,7 +161,18 @@ export interface ComputedDashboard {
   riskScore: number;
   status: string;
   network: string;
-  allocations: { symbol: string; name: string; percentage: number; value: number; tone: string }[];
+  allocations: {
+    symbol: string;
+    name: string;
+    percentage: number;
+    value: number;
+    tone: string;
+    /** onchain | accounting | simulated - see the OpenAPI Allocation schema. */
+    source: string;
+    tradable: boolean;
+    units: number;
+    untradableReason?: string;
+  }[];
   portfolioHistory: { label: string; value: number }[];
   activities: {
     id: string;
@@ -156,9 +190,11 @@ export async function computeDashboard(
   signal?: AbortSignal,
 ): Promise<ComputedDashboard> {
   const state = await loadState(treasuryId, signal);
-  const quote = await getMarketQuote();
+  const [quote, custody] = await Promise.all([
+    getMarketQuote(),
+    readCustodyHoldings(treasuryId, signal),
+  ]);
 
-  const ethPrice = quote?.ethUsd ?? state.lastEthPrice;
   const usdcPrice = quote?.usdcUsd ?? state.lastUsdcPrice;
 
   if (quote && !quote.stale) {
@@ -169,37 +205,85 @@ export async function computeDashboard(
       .where(eq(treasuryStateTable.id, treasuryId));
   }
 
-  const usdcValue = state.usdcUnits * usdcPrice;
-  const aUsdcValue = state.aUsdcUnits * usdcPrice;
-  const sUsdcValue = state.sUsdcUnits * usdcPrice;
-  const ethValue = state.ethUnits * ethPrice;
-  const totalValue = usdcValue + aUsdcValue + sUsdcValue + ethValue;
+  // Composition is read from the custody wallet, not from stored numbers. When
+  // the chain cannot be reached we fall back to the deposit ledger and label
+  // the row as such, because "RPC is down" must never render as "treasury is
+  // empty".
+  const rows = custody.ok
+    ? custody.holdings.map((h) => {
+        const price = referencePriceFor(h.coingeckoId, quote);
+        return {
+          symbol: h.symbol,
+          name: ALLOCATION_LABELS[h.symbol] ?? h.name,
+          units: h.units,
+          rawValue: price !== undefined ? h.units * price : 0,
+          tone: ALLOCATION_TONES[h.symbol] ?? "cyan",
+          source: "onchain",
+          tradable: h.tradable,
+          ...(h.untradableReason ? { untradableReason: h.untradableReason } : {}),
+          role: h.role,
+        };
+      })
+    : [
+        {
+          symbol: "USDC",
+          name: ALLOCATION_LABELS.USDC,
+          units: state.usdcUnits,
+          rawValue: state.usdcUnits * usdcPrice,
+          tone: "cyan",
+          source: "accounting",
+          tradable: true,
+          role: "stable" as const,
+        },
+      ];
+
+  // A total is only trustworthy when every held asset was read live AND could
+  // be priced. Anything less and the figure understates the treasury, so it
+  // must not be snapshotted, charted as a change, or read as a drawdown.
+  const unpriced = custody.holdings.filter(
+    (h) => h.units > 0 && referencePriceFor(h.coingeckoId, quote) === undefined,
+  );
+  const valuation = custody.ok
+    ? unpriced.length === 0
+      ? { complete: true }
+      : {
+          complete: false,
+          note: `No reference price for ${unpriced.map((h) => h.symbol).join(", ")}, so those holdings are excluded from the total.`,
+        }
+    : {
+        complete: false,
+        note: `Arc could not be read (${custody.error ?? "RPC unreachable"}), so the deposit ledger is shown instead of live balances.`,
+      };
+
+  const totalValue = rows.reduce((sum, r) => sum + r.rawValue, 0);
 
   // An empty treasury has no composition: all percentages are 0, not NaN.
   const pct = (v: number) => (totalValue > 0 ? Math.round((v / totalValue) * 1000) / 10 : 0);
+  const sumRole = (role: string) =>
+    pct(rows.filter((r) => r.role === role).reduce((sum, r) => sum + r.rawValue, 0));
 
-  const allocations = [
-    { symbol: "USDC", name: "Liquid reserve", percentage: pct(usdcValue), value: Math.round(usdcValue), tone: "cyan" },
-    { symbol: "aUSDC", name: "Arc lending vault", percentage: pct(aUsdcValue), value: Math.round(aUsdcValue), tone: "violet" },
-    { symbol: "sUSDC", name: "USDC safe reserve", percentage: pct(sUsdcValue), value: Math.round(sUsdcValue), tone: "amber" },
-    { symbol: "ETH", name: "Directional sleeve", percentage: pct(ethValue), value: Math.round(ethValue), tone: "blue" },
-  ];
+  const allocations = rows.map(({ rawValue, role: _role, units, ...rest }) => ({
+    ...rest,
+    percentage: pct(rawValue),
+    value: Math.round(rawValue),
+    units: Math.round(units * 1e6) / 1e6,
+  }));
 
-  // Risk score derived from the actual composition: volatile exposure and
-  // protocol concentration raise it; a thin liquid reserve raises it further.
-  const liquidPct = pct(usdcValue);
+  // Risk score derived from the actual composition: volatile exposure raises
+  // it, and a thin liquid reserve raises it further.
+  const liquidPct = sumRole("stable");
   // An empty treasury carries no risk and has nothing deployed.
   const riskScore =
     totalValue > 0
-      ? Math.round(
-          Math.min(
-            100,
-            pct(ethValue) * 1.2 + pct(aUsdcValue) * 0.45 + Math.max(0, 25 - liquidPct) * 3,
-          ),
-        )
+      ? Math.round(Math.min(100, sumRole("risk") * 1.2 + Math.max(0, 25 - liquidPct) * 3))
       : 0;
 
-  await maybeSnapshot(treasuryId, totalValue, signal);
+  // Only a complete valuation may enter NAV history. Snapshotting a degraded
+  // read would bake an outage into the chart and let the drawdown monitor
+  // raise a critical breach over an RPC blip.
+  if (valuation.complete) {
+    await maybeSnapshot(treasuryId, totalValue, signal);
+  }
 
   const history = await db
     .select()
@@ -212,8 +296,10 @@ export async function computeDashboard(
   const dayAgo = Date.now() - 24 * 60 * 60_000;
   const reference =
     history.find((snap) => snap.time.getTime() >= dayAgo) ?? history[0];
+  // Same reasoning as the snapshot gate: a degraded total would render as a
+  // crash against yesterday's healthy reference.
   const dayChange =
-    reference && reference.value > 0
+    valuation.complete && reference && reference.value > 0
       ? Math.round(((totalValue - reference.value) / reference.value) * 10000) / 100
       : 0;
 
@@ -238,6 +324,7 @@ export async function computeDashboard(
 
   return {
     totalValue: Math.round(totalValue),
+    valuation,
     funded: firstDeposit !== undefined,
     dayChange,
     deployed: totalValue > 0 ? Math.round((100 - liquidPct) * 10) / 10 : 0,
@@ -285,17 +372,27 @@ async function maybeSnapshot(
 /** Executor type so state mutations can run inside a caller's transaction. */
 export type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-const REBALANCE_SYMBOLS = ["USDC", "aUSDC", "sUSDC", "ETH"];
+/**
+ * Symbols a rebalance may name. Only assets Revo can actually route on Arc
+ * Testnet qualify - cirBTC is held and priced but has no tradable liquidity, so
+ * a policy may never target it.
+ */
+const REBALANCE_SYMBOLS = tradableTokens().map((t) => t.symbol);
 
 /**
- * Applies an approved rebalance: converts the treasury's unit holdings so the
- * portfolio matches the target percentage allocation at current prices. Total
- * value is conserved (simulated execution, no slippage) - only the split
- * between holdings changes.
+ * Records an approved rebalance target.
  *
- * Runs on the caller's executor so the holdings write commits (or rolls back)
- * atomically with the proposal's status transition. Throws on malformed
- * targets instead of writing a partial or nonsensical allocation.
+ * This used to rewrite four unit columns so the dashboard would show the new
+ * split instantly. That was the simulation: no asset moved, and the numbers
+ * were the only thing that changed. Composition is now read from the custody
+ * wallet, so holdings shift when - and only when - a swap settles on chain.
+ *
+ * What remains here is validation and the price mark. The approved target is
+ * carried by the proposal record itself; this call refuses targets Revo could
+ * never execute rather than accepting them and quietly doing nothing.
+ *
+ * Runs on the caller's executor so the write commits (or rolls back) atomically
+ * with the proposal's status transition.
  */
 export async function applyRebalance(
   executor: DbExecutor,
@@ -327,34 +424,14 @@ export async function applyRebalance(
   if (!state) {
     throw new Error("Treasury state is not initialized; cannot rebalance");
   }
-  const ethPrice = quote?.ethUsd ?? state.lastEthPrice;
-  const usdcPrice = quote?.usdcUsd ?? state.lastUsdcPrice;
-
-  const totalValue =
-    state.usdcUnits * usdcPrice +
-    state.aUsdcUnits * usdcPrice +
-    state.sUsdcUnits * usdcPrice +
-    state.ethUnits * ethPrice;
-
-  const pctFor = (symbol: string): number | null => {
-    const target = targets.find((t) => t.symbol === symbol);
-    return target ? target.percentage : null;
-  };
-
-  const usdcPct = pctFor("USDC");
-  const aUsdcPct = pctFor("aUSDC");
-  const sUsdcPct = pctFor("sUSDC");
-  const ethPct = pctFor("ETH");
-
+  // Mark the book at the prices the approval was judged against. Unit columns
+  // are deliberately untouched: the treasury's composition lives on chain and
+  // only a settled swap may move it.
   await executor
     .update(treasuryStateTable)
     .set({
-      usdcUnits: usdcPct !== null ? (totalValue * usdcPct) / 100 / usdcPrice : state.usdcUnits,
-      aUsdcUnits: aUsdcPct !== null ? (totalValue * aUsdcPct) / 100 / usdcPrice : state.aUsdcUnits,
-      sUsdcUnits: sUsdcPct !== null ? (totalValue * sUsdcPct) / 100 / usdcPrice : state.sUsdcUnits,
-      ethUnits: ethPct !== null ? (totalValue * ethPct) / 100 / ethPrice : state.ethUnits,
-      lastEthPrice: ethPrice,
-      lastUsdcPrice: usdcPrice,
+      lastEthPrice: quote?.ethUsd ?? state.lastEthPrice,
+      lastUsdcPrice: quote?.usdcUsd ?? state.lastUsdcPrice,
       updatedAt: new Date(),
     })
     .where(eq(treasuryStateTable.id, treasuryId));

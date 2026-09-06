@@ -14,3 +14,4 @@
 - [Custody lock test contention](custody-lock-test-contention.md) — its 2s pool deadline flakes when test files are added; isolate and re-run before calling it a regression.
 - [Tower quoting on Arc](tower-arc-quoting.md) — its amounts, fractions and risk fields each lie in a different way; a quote never authorises a trade.
 - [Arc DEX ground truth](arc-dex-liquidity.md) — judge pools by reading them over RPC, not through the aggregator; depth and price sanity are independent.
+- [On-chain allocations](onchain-allocations.md) — read composition from the wallet; a failed RPC read must never render as a zero balance.

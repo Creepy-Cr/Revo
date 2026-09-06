@@ -12,4 +12,12 @@ export interface Allocation {
   percentage: number;
   value: number;
   tone: string;
+  /** Where the balance came from. "onchain" is a live custody-wallet balance read from Arc. "accounting" means the chain could not be read and the figure is the deposit ledger's record instead. "simulated" is a drill overlay, which rewrites percentages and values without any asset moving. The UI must label these from this field rather than inferring from the symbol. */
+  source: string;
+  /** Whether Revo can route a trade in this asset on Arc Testnet */
+  tradable: boolean;
+  /** Token units held, as opposed to their dollar value */
+  units: number;
+  /** Why the asset is held and priced but never traded */
+  untradableReason?: string;
 }

@@ -665,7 +665,7 @@ components:
           description: Where to get Arc Testnet USDC
     Allocation:
       type: object
-      required: [symbol, name, percentage, value, tone]
+      required: [symbol, name, percentage, value, tone, source, tradable, units]
       properties:
         symbol:
           type: string
@@ -677,6 +677,24 @@ components:
           type: number
         tone:
           type: string
+        source:
+          type: string
+          description: >-
+            Where the balance came from. "onchain" is a live custody-wallet
+            balance read from Arc. "accounting" means the chain could not be
+            read and the figure is the deposit ledger's record instead.
+            "simulated" is a drill overlay, which rewrites percentages and
+            values without any asset moving. The UI must label these from this
+            field rather than inferring from the symbol.
+        tradable:
+          type: boolean
+          description: Whether Revo can route a trade in this asset on Arc Testnet
+        units:
+          type: number
+          description: Token units held, as opposed to their dollar value
+        untradableReason:
+          type: string
+          description: Why the asset is held and priced but never traded
     PortfolioPoint:
       type: object
       required: [label, value]
@@ -736,10 +754,25 @@ components:
           type: ["string", "null"]
     TreasuryDashboard:
       type: object
-      required: [totalValue, funded, dayChange, deployed, riskScore, status, network, mode, allocations, portfolioHistory, activities, guardrails, drill]
+      required: [totalValue, valuation, funded, dayChange, deployed, riskScore, status, network, mode, allocations, portfolioHistory, activities, guardrails, drill]
       properties:
         totalValue:
           type: number
+        valuation:
+          type: object
+          required: [complete]
+          description: >-
+            Whether totalValue can be trusted. It is complete only when every
+            allocation row is a live on-chain balance with a known reference
+            price. When incomplete the total understates the treasury, so it is
+            not written to NAV history, dayChange is suppressed, and the
+            drawdown monitor stays idle rather than reading an outage as a loss.
+          properties:
+            complete:
+              type: boolean
+            note:
+              type: string
+              description: Why the valuation is incomplete, shown to the operator
         funded:
           type: boolean
           description: >-
@@ -1319,9 +1352,11 @@ components:
           enum: [viewer, strategist, approver, guardian, admin]
     SwapVenueToken:
       type: object
-      required: [symbol, address, decimals, role]
+      required: [symbol, name, address, decimals, role, tradable]
       properties:
         symbol:
+          type: string
+        name:
           type: string
         address:
           type: string
@@ -1330,27 +1365,63 @@ components:
         role:
           type: string
           description: stable | risk
+        tradable:
+          type: boolean
+          description: >-
+            Whether Revo will route a trade in this token. False is a Revo
+            decision about pool quality, not a venue capability.
+        untradableReason:
+          type: string
+          description: Why the token is held and priced but never traded
     SwapVenueStatus:
       type: object
       required:
-        [venue, chainId, network, configured, registryAvailable, arcSupportsSwaps, swapEnabled, tokens, checkedAt]
+        [
+          venue,
+          chainId,
+          network,
+          routerAddress,
+          configured,
+          registryAvailable,
+          arcSupportsSwaps,
+          rpcReachable,
+          contractsDeployed,
+          blockNumber,
+          swapEnabled,
+          tokens,
+          checkedAt,
+        ]
       properties:
         venue:
           type: string
-          description: Which venue was probed
+          description: Which venue trades actually execute on
         chainId:
           type: number
         network:
           type: string
+        routerAddress:
+          type: string
+          description: Router contract a signed swap would go through
         configured:
           type: boolean
-          description: Whether venue credentials are present. Never reveals them.
+          description: >-
+            Whether the venue-catalogue credentials are present. The catalogue is
+            used to validate token addresses, not to quote. Never reveals the key.
         registryAvailable:
           type: boolean
-          description: Whether the venue's chain and token registry could be read
+          description: Whether the venue catalogue could be read
         arcSupportsSwaps:
           type: boolean
-          description: Whether the venue still advertises swap support on Arc Testnet
+          description: Whether the catalogue still advertises swap support on Arc Testnet
+        rpcReachable:
+          type: boolean
+          description: Whether Arc's RPC answered
+        contractsDeployed:
+          type: boolean
+          description: Whether the factory, quoter and router all have code on Arc
+        blockNumber:
+          type: ["string", "null"]
+          description: Arc block height at the time of the check
         swapEnabled:
           type: boolean
           description: >-
@@ -1358,7 +1429,7 @@ components:
             quoting may still work but nothing may be signed.
         tokens:
           type: array
-          description: Tokens Revo has approved for trading on this venue
+          description: Tokens Revo has pinned, tradable or otherwise
           items:
             $ref: "#/components/schemas/SwapVenueToken"
         reason:
@@ -1382,25 +1453,31 @@ components:
       type: object
       required:
         [
+          venue,
           inputSymbol,
           outputSymbol,
           inputAmount,
           inputBaseUnits,
-          indicativeOutput,
-          indicativeMinOut,
+          expectedOutput,
+          minOutput,
           impliedRate,
+          referenceRate,
+          deviationPct,
           priceImpactPct,
-          feeBps,
+          feeTier,
+          poolAddress,
+          poolLiquidityOut,
           slippageBps,
-          gasEstimate,
-          dexName,
           routerAddress,
-          routePath,
+          chainId,
           tradable,
           warnings,
           quotedAt,
         ]
       properties:
+        venue:
+          type: string
+          description: Venue the quote was read from
         inputSymbol:
           type: string
         outputSymbol:
@@ -1410,35 +1487,43 @@ components:
           description: Human amount requested, echoed back unchanged
         inputBaseUnits:
           type: string
+          description: Real base units computed by Revo from its own pinned decimals
+        expectedOutput:
+          type: ["string", "null"]
+          description: Output the pool quoted on-chain
+        minOutput:
+          type: ["string", "null"]
           description: >-
-            Real base units computed by Revo from its own pinned decimals. The
-            venue's echoed amount is deliberately not used, because Tower
-            scales by 10^(18-decimals) rather than 10^decimals.
-        indicativeOutput:
-          type: ["string", "null"]
-          description: Expected output, indicative only
-        indicativeMinOut:
-          type: ["string", "null"]
-          description: Venue's minimum-output floor, indicative only
+            Execution floor derived locally from the quote and the slippage
+            tolerance. Never taken from a third party.
         impliedRate:
           type: ["number", "null"]
-          description: Output units per input unit implied by the quote
+          description: Output units per input unit the pool would actually give
+        referenceRate:
+          type: ["number", "null"]
+          description: The same rate implied by real-world prices, for comparison
+        deviationPct:
+          type: ["number", "null"]
+          description: How far the pool sits from the real market, as a percentage
         priceImpactPct:
           type: ["number", "null"]
-        feeBps:
+          description: >-
+            Measured here by comparing the order against a dust-sized quote on
+            the same pool, not a figure reported by the venue.
+        feeTier:
           type: ["number", "null"]
+          description: Uniswap v3 fee tier of the pool chosen, in hundredths of a bip
+        poolAddress:
+          type: ["string", "null"]
+        poolLiquidityOut:
+          type: ["string", "null"]
+          description: Output-side token balance held by the pool
         slippageBps:
-          type: ["number", "null"]
-        gasEstimate:
-          type: ["string", "null"]
-        dexName:
-          type: ["string", "null"]
+          type: number
         routerAddress:
-          type: ["string", "null"]
-        routePath:
-          type: array
-          items:
-            type: string
+          type: string
+        chainId:
+          type: number
         tradable:
           type: boolean
           description: False whenever the route must not be signed

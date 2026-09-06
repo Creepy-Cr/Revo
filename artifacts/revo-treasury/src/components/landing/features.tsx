@@ -100,7 +100,7 @@ export function Features() {
                     <div className="text-xs text-muted-foreground tracking-[0.14em] ml-3">REVO CORE</div>
                   </div>
                   <div className="text-muted-foreground mb-2">{'//'} User Input</div>
-                  <div className="text-white mb-8">"Rotate 15% of idle USDC into the Arc lending vault."</div>
+                  <div className="text-white mb-8">"Rotate 15% of idle USDC into EURC."</div>
                   
                   <div className="text-muted-foreground mb-2">{'//'} Execution Trace</div>
                   <div className="text-muted-foreground mb-1.5">Parsing intent...</div>

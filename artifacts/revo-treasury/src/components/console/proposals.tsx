@@ -88,12 +88,13 @@ export function Proposals() {
             const isPend = p.status === 'pending';
             const isRej = p.status === 'rejected';
 
+            // Keyed by the real Arc tokens the treasury can hold. Matches the
+            // tones the allocations panel uses so one asset reads the same
+            // colour everywhere in the console.
             const assetColors: Record<string, string> = {
               'USDC': 'bg-primary',
-              'AUSDC': 'bg-purple-500',
-              'SUSDC': 'bg-blue-500',
-              'ETH': 'bg-green-500',
-              'WBTC': 'bg-amber-500',
+              'EURC': 'bg-purple-500',
+              'CIRBTC': 'bg-amber-500',
             };
             const defaultAssetColor = 'bg-white/40';
 

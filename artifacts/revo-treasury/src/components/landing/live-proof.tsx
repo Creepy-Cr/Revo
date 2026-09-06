@@ -16,24 +16,26 @@ import { Link } from 'wouter';
 
 // Coherent seeded state: allocations sum exactly to NAV, dayChange equals
 // the 24h return of the seeded history below, riskScore follows the server
-// formula (eth%*1.2 + aUsdc%*0.45 + max(0, 25 - liquid%)*3, rounded), and
-// Arcus's reply references the same liquid-reserve gap the bars show.
+// formula (risk%*1.2 + max(0, 25 - liquid%)*3, rounded), and Arcus's reply
+// references the same liquid-reserve gap the bars show. Symbols are the real
+// Arc tokens the treasury can hold, so the marketing mock cannot drift into
+// advertising assets that do not exist.
 const SEEDED_NAV = 2_847_394;
 
 const SEEDED_DASHBOARD: TreasuryDashboard = {
   totalValue: SEEDED_NAV,
+  valuation: { complete: true },
   funded: true,
   dayChange: 1.42,
   deployed: 61.8,
-  riskScore: 30,
+  riskScore: 74,
   status: 'OPERATIONAL',
   network: 'Arc Testnet',
   mode: 'managed',
   allocations: [
-    { symbol: 'USDC', name: 'Liquid reserve', percentage: 38.2, value: 1_087_705, tone: 'cyan' },
-    { symbol: 'aUSDC', name: 'Arc lending vault', percentage: 24.6, value: 700_459, tone: 'violet' },
-    { symbol: 'sUSDC', name: 'USDC safe reserve', percentage: 21.4, value: 609_342, tone: 'amber' },
-    { symbol: 'ETH', name: 'Directional sleeve', percentage: 15.8, value: 449_888, tone: 'blue' },
+    { symbol: 'USDC', name: 'Liquid reserve', percentage: 38.2, value: 1_087_705, units: 1_087_778, tone: 'cyan', source: 'onchain', tradable: true },
+    { symbol: 'EURC', name: 'Euro exposure', percentage: 35.0, value: 996_588, units: 859_128, tone: 'violet', source: 'onchain', tradable: true },
+    { symbol: 'cirBTC', name: 'Bitcoin exposure', percentage: 26.8, value: 763_101, units: 9.576228, tone: 'amber', source: 'onchain', tradable: false, untradableReason: 'The only Arc Testnet pool holds 0.59 cirBTC and prices it ~414% above spot, so Revo will not route an order in it.' },
   ],
   portfolioHistory: [],
   activities: [],

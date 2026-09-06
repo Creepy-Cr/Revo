@@ -10,9 +10,12 @@ import type { Allocation } from './allocation';
 import type { DrillStatus } from './drillStatus';
 import type { Guardrail } from './guardrail';
 import type { PortfolioPoint } from './portfolioPoint';
+import type { TreasuryDashboardValuation } from './treasuryDashboardValuation';
 
 export interface TreasuryDashboard {
   totalValue: number;
+  /** Whether totalValue can be trusted. It is complete only when every allocation row is a live on-chain balance with a known reference price. When incomplete the total understates the treasury, so it is not written to NAV history, dayChange is suppressed, and the drawdown monitor stays idle rather than reading an outage as a loss. */
+  valuation: TreasuryDashboardValuation;
   /** True once the treasury has ever received a confirmed on-chain deposit. Durable first-run predicate - unlike totalValue (which is rounded and can read 0 for a small funded balance), this never flips back to false. */
   funded: boolean;
   /** safe | managed | autonomous */
