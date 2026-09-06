@@ -25,7 +25,12 @@ const SUCCESS_TTL_MS = 30 * 60_000; // 30 minutes
 const FAILURE_COOLDOWN_MS = 10 * 60_000; // 10 minutes
 const FEED_TIMEOUT_MS = 8_000;
 
-export type NewsAsset = "ETH" | "USDC";
+/**
+ * Assets the news pipeline buckets headlines for. These mirror the pinned Arc
+ * token registry: BTC stands in for the cirBTC sleeve, whose only honest
+ * reference is the real Bitcoin market.
+ */
+export type NewsAsset = "BTC" | "EURC" | "USDC";
 
 export interface NewsSentiment extends LexiconScore {
   asset: NewsAsset;
@@ -34,8 +39,18 @@ export interface NewsSentiment extends LexiconScore {
   fetchedAt: number;
 }
 
-const ETH_PATTERN = /\beth\b|ethereum|\bether\b/i;
-const USDC_PATTERN = /\busdc\b|usd coin|stablecoin|\bcircle\b/i;
+/**
+ * Literal keyword buckets. Deliberately tight: a headline is counted for an
+ * asset only when it names it, because a loose match ("euro" catching every
+ * European regulator story) would score noise as sentiment.
+ */
+const PATTERNS: Record<NewsAsset, RegExp> = {
+  BTC: /\bbtc\b|bitcoin/i,
+  EURC: /\beurc\b|euro coin|euro stablecoin|euro-backed/i,
+  USDC: /\busdc\b|usd coin|stablecoin|\bcircle\b/i,
+};
+
+const NEWS_ASSETS = Object.keys(PATTERNS) as NewsAsset[];
 
 function decodeEntities(s: string): string {
   return s
@@ -72,8 +87,7 @@ function parseFeedItems(xml: string): string[] {
 }
 
 interface NewsSnapshot {
-  eth: NewsSentiment | null;
-  usdc: NewsSentiment | null;
+  assets: Record<NewsAsset, NewsSentiment | null>;
   fetchedAt: number;
 }
 
@@ -112,17 +126,18 @@ async function refreshSnapshot(): Promise<NewsSnapshot> {
   }
 
   const now = Date.now();
-  const build = (asset: NewsAsset, pattern: RegExp): NewsSentiment | null => {
-    const matched = texts.filter((t) => pattern.test(t));
+  const build = (asset: NewsAsset): NewsSentiment | null => {
+    const matched = texts.filter((t) => PATTERNS[asset].test(t));
     const scored = scoreTexts(matched);
     return scored ? { ...scored, asset, feeds: okFeeds, fetchedAt: now } : null;
   };
 
-  const next: NewsSnapshot = {
-    eth: build("ETH", ETH_PATTERN),
-    usdc: build("USDC", USDC_PATTERN),
-    fetchedAt: now,
-  };
+  const assets = {} as Record<NewsAsset, NewsSentiment | null>;
+  for (const asset of NEWS_ASSETS) {
+    assets[asset] = build(asset);
+  }
+
+  const next: NewsSnapshot = { assets, fetchedAt: now };
   snapshot = next;
   failureCooldownUntil = 0;
   return next;
@@ -131,7 +146,7 @@ async function refreshSnapshot(): Promise<NewsSnapshot> {
 export async function fetchNewsSentiment(asset: NewsAsset): Promise<NewsSentiment | null> {
   const now = Date.now();
   if (snapshot && now - snapshot.fetchedAt < SUCCESS_TTL_MS) {
-    return asset === "ETH" ? snapshot.eth : snapshot.usdc;
+    return snapshot.assets[asset];
   }
   if (now < failureCooldownUntil) {
     return null; // cooling down - omit, never refetch early, never serve stale
@@ -144,7 +159,7 @@ export async function fetchNewsSentiment(asset: NewsAsset): Promise<NewsSentimen
   }
   try {
     const fresh = await inFlight;
-    return asset === "ETH" ? fresh.eth : fresh.usdc;
+    return fresh.assets[asset];
   } catch (error) {
     console.error("News sentiment unavailable:", error);
     failureCooldownUntil = Date.now() + FAILURE_COOLDOWN_MS;

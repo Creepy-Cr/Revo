@@ -1,3 +1,4 @@
+import { ARC_TOKENS, type TradedSymbol } from "./arc-tokens";
 import { getMarketQuote } from "./market";
 import { fetchXSentiment } from "./x-sentiment";
 import { fetchNewsSentiment } from "./news-sentiment";
@@ -7,11 +8,17 @@ import { fetchDiscordSentiment } from "./discord-sentiment";
 /**
  * Alpha signals computed from real public data sources:
  *  - CoinGecko market quotes (price, 24h momentum, USDC peg deviation)
- *  - GitHub public API (7-day commit activity on portfolio-relevant repos)
+ *  - GitHub public API (7-day commit activity on the issuer contracts behind
+ *    the treasury's tokens)
  *  - Crypto news RSS feeds (live headline sentiment, keyless)
  *  - Arc Testnet RPC whale scan (live large-USDC-transfer monitoring)
  *  - X (Twitter) recent-post sentiment - dormant until X_API_BEARER_TOKEN is set
  *  - Discord community sentiment - dormant until DISCORD_BOT_TOKEN + DISCORD_CHANNEL_IDS are set
+ *
+ * The feed only ever reports on assets the treasury can actually hold, which
+ * is the pinned Arc token registry and nothing else. A risk signal for a
+ * position an operator cannot take is worse than no signal: it invites a
+ * decision the treasury has no way to act on.
  *
  * Each signal is a per-asset COMPOSITE: every upstream source contributes a
  * signed component score (-100 bearish .. +100 bullish) with a weight, and
@@ -33,7 +40,16 @@ export interface SignalComponent {
 
 export interface ComputedSignal {
   id: string;
-  asset: string;
+  /**
+   * The treasury token this signal is about, typed to the pinned registry so a
+   * signal cannot be scoped to an asset the treasury has no way to hold.
+   *
+   * Omitted, never faked, when a signal is not about a token at all. Community
+   * sentiment is the case in point: it reads the DAO's mood, not a position,
+   * and labelling it with a ticker-shaped placeholder would put a tradable-
+   * looking asset in front of an operator where there is none.
+   */
+  asset?: TradedSymbol;
   score: number;
   direction: string;
   title: string;
@@ -88,6 +104,21 @@ interface RepoActivity {
 const GITHUB_CACHE_TTL_MS = 15 * 60_000;
 const githubCache = new Map<string, RepoActivity>();
 
+/**
+ * Scales a signed 24h percentage change onto the -100..+100 component range.
+ * The factor sets where the component saturates, which has to differ per
+ * asset: a 5% day is ordinary for BTC and would be an extraordinary one for
+ * EURC, whose USD value tracks the euro and moves an order of magnitude less.
+ */
+const BTC_MOMENTUM_SCALE = 20; // saturates around a 5% day
+const EURC_MOMENTUM_SCALE = 60; // saturates around a 1.7% day
+
+/**
+ * Derived from the pinned registry rather than written out, so the copy on the
+ * reserve card can never drift away from the tokens the treasury can hold.
+ */
+const TOKEN_SET_LABEL = Object.keys(ARC_TOKENS).join(" / ");
+
 async function fetchRepoActivity(owner: string, repo: string): Promise<RepoActivity | null> {
   const key = `${owner}/${repo}`;
   const cached = githubCache.get(key);
@@ -130,92 +161,158 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
 
   const [
     quote,
-    gethActivity,
-    usdcRepoActivity,
-    ethSentiment,
+    issuerRepoActivity,
+    btcSentiment,
+    eurcSentiment,
     usdcSentiment,
-    ethNews,
+    btcNews,
+    eurcNews,
     usdcNews,
     whale,
     discord,
   ] = await Promise.all([
     getMarketQuote(),
-    fetchRepoActivity("ethereum", "go-ethereum"),
+    // Circle's FiatToken implementation is the issuer contract behind both the
+    // USDC reserve and the EURC sleeve on Arc, so its churn is real risk for
+    // both legs rather than a per-asset curiosity.
     fetchRepoActivity("circlefin", "stablecoin-evm"),
-    fetchXSentiment("ETH"),
+    fetchXSentiment("BTC"),
+    fetchXSentiment("EURC"),
     fetchXSentiment("USDC"),
-    fetchNewsSentiment("ETH"),
+    fetchNewsSentiment("BTC"),
+    fetchNewsSentiment("EURC"),
     fetchNewsSentiment("USDC"),
     fetchWhaleActivity(),
     fetchDiscordSentiment(),
   ]);
 
-  // ---- ETH composite: market momentum + client development activity ----
+  // ---- cirBTC composite: the Bitcoin sleeve, marked against the real BTC market ----
   {
+    const token = ARC_TOKENS.cirBTC;
     const components: SignalComponent[] = [];
+    const btcUsd = quote?.btcUsd;
+    const btcChange = quote?.btcChange24h;
 
-    if (quote) {
-      const change = quote.ethChange24h;
+    if (quote && typeof btcUsd === "number" && typeof btcChange === "number") {
       components.push({
         source: "CoinGecko market data",
         label: "24h momentum",
-        score: Math.round(clamp(change * 16, -100, 100)),
+        score: Math.round(clamp(btcChange * BTC_MOMENTUM_SCALE, -100, 100)),
         weight: 0.6,
-        detail: `ETH at $${quote.ethUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}, ${change >= 0 ? "up" : "down"} ${Math.abs(change).toFixed(2)}% in 24h${quote.stale ? " (last successful fetch)" : ""}.`,
+        detail: `BTC at $${btcUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}, ${btcChange >= 0 ? "up" : "down"} ${Math.abs(btcChange).toFixed(2)}% in 24h${quote.stale ? " (last successful fetch)" : ""}. This is the reference market the ${token.symbol} sleeve is marked against, not the Arc pool rate.`,
       });
     }
 
-    if (gethActivity) {
-      components.push({
-        source: "GitHub public API",
-        label: "Client dev activity",
-        score: Math.round(clamp((gethActivity.commits - 15) * 2.5, -100, 100)),
-        weight: 0.4,
-        detail: `ethereum/go-ethereum landed ${gethActivity.commits} commits in ${gethActivity.windowDays} days; sustained client work supports the directional thesis.`,
-      });
-    }
-
-    if (ethSentiment) {
+    if (btcSentiment) {
       components.push({
         source: "X (Twitter) public posts",
         label: "Social sentiment",
-        score: ethSentiment.score,
+        score: btcSentiment.score,
         weight: 0.25,
-        detail: `${ethSentiment.sampleSize} recent English posts on ETH: ${ethSentiment.bullish} bullish vs ${ethSentiment.bearish} bearish (${ethSentiment.neutral} neutral).`,
+        detail: `${btcSentiment.sampleSize} recent English posts on BTC: ${btcSentiment.bullish} bullish vs ${btcSentiment.bearish} bearish (${btcSentiment.neutral} neutral).`,
       });
     }
 
-    if (ethNews) {
+    if (btcNews) {
       components.push({
         source: "Crypto news RSS feeds",
         label: "News sentiment",
-        score: ethNews.score,
+        score: btcNews.score,
         weight: 0.25,
-        detail: `${ethNews.sampleSize} live headline${ethNews.sampleSize === 1 ? "" : "s"} mentioning ETH from ${ethNews.feeds.join(", ")}: ${ethNews.bullish} bullish vs ${ethNews.bearish} bearish (${ethNews.neutral} neutral).`,
+        detail: `${btcNews.sampleSize} live headline${btcNews.sampleSize === 1 ? "" : "s"} mentioning BTC from ${btcNews.feeds.join(", ")}: ${btcNews.bullish} bullish vs ${btcNews.bearish} bearish (${btcNews.neutral} neutral).`,
       });
     }
 
     if (components.length > 0) {
       const normalized = normalizeWeights(components);
       const score = compositeScore(normalized);
-      const change = quote?.ethChange24h ?? 0;
       signals.push({
-        id: "sig-eth-composite",
-        asset: "ETH",
+        id: "sig-cirbtc-composite",
+        asset: token.symbol,
         score,
         direction: score >= 58 ? "positive" : score <= 38 ? "warning" : "neutral",
         title:
           score >= 58
-            ? "ETH composite reads constructive"
+            ? `${token.symbol} sleeve reads constructive`
             : score <= 38
-              ? "ETH composite under pressure"
-              : "ETH composite balanced",
+              ? `${token.symbol} sleeve under pressure`
+              : `${token.symbol} sleeve balanced`,
         sources: normalized.map((c) => c.source),
         confidence: Math.round(
-          clamp(55 + normalized.length * 12 + Math.abs(change) * 3, 55, 95),
+          clamp(55 + normalized.length * 12 + Math.abs(btcChange ?? 0) * 3, 55, 95),
         ),
         time: quote && quote.stale ? new Date(quote.fetchedAt).toISOString() : now,
-        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} weighing the directional ETH sleeve. Each component score below is computed from actually fetched data.`,
+        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} on the ${token.name.toLowerCase()} the treasury holds as ${token.symbol}, read from the real BTC market.${token.tradable ? "" : ` Price risk only: Revo will not route a trade in ${token.symbol}, because ${token.untradableReason}.`} Each component score below is computed from actually fetched data.`,
+        components: normalized,
+      });
+    }
+  }
+
+  // ---- EURC composite: the only risk sleeve Revo can actually trade ----
+  {
+    const token = ARC_TOKENS.EURC;
+    const components: SignalComponent[] = [];
+    const eurUsd = quote?.eurUsd;
+    const eurChange = quote?.eurChange24h;
+
+    if (quote && typeof eurUsd === "number" && typeof eurChange === "number") {
+      components.push({
+        source: "CoinGecko market data",
+        label: "24h momentum",
+        score: Math.round(clamp(eurChange * EURC_MOMENTUM_SCALE, -100, 100)),
+        weight: 0.6,
+        detail: `${token.symbol} last traded at $${eurUsd.toFixed(4)}, ${eurChange >= 0 ? "up" : "down"} ${Math.abs(eurChange).toFixed(2)}% in 24h${quote.stale ? " (last successful fetch)" : ""}. The sleeve's USD value moves with the euro, so this is currency exposure rather than crypto beta.`,
+      });
+    }
+
+    if (issuerRepoActivity) {
+      components.push({
+        source: "GitHub public API",
+        label: "Issuer contract churn",
+        score: Math.round(clamp(24 - issuerRepoActivity.commits * 8, -100, 100)),
+        weight: 0.3,
+        detail: `circlefin/stablecoin-evm landed ${issuerRepoActivity.commits} commits in ${issuerRepoActivity.windowDays} days; ${token.symbol} is issued from the same Circle contract family as USDC, so issuer-side changes are monitored for both.`,
+      });
+    }
+
+    if (eurcSentiment) {
+      components.push({
+        source: "X (Twitter) public posts",
+        label: "Social sentiment",
+        score: eurcSentiment.score,
+        weight: 0.2,
+        detail: `${eurcSentiment.sampleSize} recent English posts on ${token.symbol}: ${eurcSentiment.bullish} bullish vs ${eurcSentiment.bearish} bearish (${eurcSentiment.neutral} neutral).`,
+      });
+    }
+
+    if (eurcNews) {
+      components.push({
+        source: "Crypto news RSS feeds",
+        label: "News sentiment",
+        score: eurcNews.score,
+        weight: 0.2,
+        detail: `${eurcNews.sampleSize} live headline${eurcNews.sampleSize === 1 ? "" : "s"} mentioning ${token.symbol} from ${eurcNews.feeds.join(", ")}: ${eurcNews.bullish} bullish vs ${eurcNews.bearish} bearish (${eurcNews.neutral} neutral).`,
+      });
+    }
+
+    if (components.length > 0) {
+      const normalized = normalizeWeights(components);
+      const score = compositeScore(normalized);
+      signals.push({
+        id: "sig-eurc-composite",
+        asset: token.symbol,
+        score,
+        direction: score >= 58 ? "positive" : score <= 38 ? "warning" : "neutral",
+        title:
+          score >= 58
+            ? `${token.symbol} sleeve reads constructive`
+            : score <= 38
+              ? `${token.symbol} sleeve under pressure`
+              : `${token.symbol} sleeve balanced`,
+        sources: normalized.map((c) => c.source),
+        confidence: Math.round(clamp(55 + normalized.length * 12, 55, 90)),
+        time: quote && quote.stale ? new Date(quote.fetchedAt).toISOString() : now,
+        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} on the ${token.name.toLowerCase()}, the one risk leg Revo will actually route a trade in. Each component score below is computed from actually fetched data.`,
         components: normalized,
       });
     }
@@ -223,6 +320,7 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
 
   // ---- USDC composite: peg stability + issuer contract churn ----
   {
+    const token = ARC_TOKENS.USDC;
     const components: SignalComponent[] = [];
 
     if (quote) {
@@ -236,13 +334,13 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
       });
     }
 
-    if (usdcRepoActivity) {
+    if (issuerRepoActivity) {
       components.push({
         source: "GitHub public API",
         label: "Issuer contract churn",
-        score: Math.round(clamp(24 - usdcRepoActivity.commits * 8, -100, 100)),
+        score: Math.round(clamp(24 - issuerRepoActivity.commits * 8, -100, 100)),
         weight: 0.3,
-        detail: `circlefin/stablecoin-evm landed ${usdcRepoActivity.commits} commits in ${usdcRepoActivity.windowDays} days; issuer-side contract changes are monitored for reserve risk.`,
+        detail: `circlefin/stablecoin-evm landed ${issuerRepoActivity.commits} commits in ${issuerRepoActivity.windowDays} days; issuer-side contract changes are monitored for reserve risk.`,
       });
     }
 
@@ -287,7 +385,7 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
         sources: normalized.map((c) => c.source),
         confidence: Math.round(clamp(58 + normalized.length * 16, 58, 92)),
         time: quote && quote.stale ? new Date(quote.fetchedAt).toISOString() : now,
-        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} guarding the USDC reserve. Each component score below is computed from actually fetched data.`,
+        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} guarding the ${token.name.toLowerCase()}, the stable leg of a ${TOKEN_SET_LABEL} book. Each component score below is computed from actually fetched data.`,
         components: normalized,
       });
     }
@@ -341,8 +439,11 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
     ];
     const score = compositeScore(components);
     signals.push({
+      // No asset: community mood is not a position. Scoping this card to a
+      // ticker would put an asset in front of an operator that this signal
+      // says nothing about, which is the same mistake as reporting on a token
+      // the treasury cannot hold.
       id: "sig-community-pulse",
-      asset: "DAO",
       score,
       direction: score >= 58 ? "positive" : score <= 38 ? "warning" : "neutral",
       title:

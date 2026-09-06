@@ -11,11 +11,14 @@
  * the component is OMITTED - never served stale, never fabricated.
  *
  * Cost controls (X charges per tweet read, ~$0.005/post):
- *  - max_results=25 per asset per refresh (2 assets = 50 reads/refresh)
- *  - 12h success cache  -> 2 refreshes/day -> ~100 reads/day (~$15/month)
+ *  - max_results=25 per asset per refresh (3 assets = 75 reads/refresh)
+ *  - 12h success cache  -> 2 refreshes/day -> ~150 reads/day (~$23/month)
  *  - per-asset single-flight dedup: concurrent callers share one request,
  *    so a cache expiry or cold start can never fan out into paid reads
  *  - 30min failure cooldown so errors never trigger retry storms
+ *
+ * The tracked assets are the ones the treasury can actually hold on Arc, so a
+ * paid read is never spent on a position Revo could not take.
  */
 
 import { scoreTexts } from "./sentiment-lexicon";
@@ -25,7 +28,12 @@ const SUCCESS_TTL_MS = 12 * 60 * 60_000; // 12 hours
 const FAILURE_COOLDOWN_MS = 30 * 60_000; // 30 minutes
 const MAX_RESULTS = 25; // per asset per refresh
 
-export type XSentimentAsset = "ETH" | "USDC";
+/**
+ * Assets the sentiment pipeline follows. These mirror the pinned Arc token
+ * registry: BTC stands in for the cirBTC sleeve, whose only honest reference
+ * is the real Bitcoin market.
+ */
+export type XSentimentAsset = "BTC" | "EURC" | "USDC";
 
 export interface XSentiment {
   asset: XSentimentAsset;
@@ -39,7 +47,8 @@ export interface XSentiment {
 }
 
 const QUERIES: Record<XSentimentAsset, string> = {
-  ETH: '(ethereum OR $eth) lang:en -is:retweet -is:reply',
+  BTC: '(bitcoin OR $btc) lang:en -is:retweet -is:reply',
+  EURC: '(eurc OR "euro coin") lang:en -is:retweet -is:reply',
   USDC: '(usdc OR "usd coin") lang:en -is:retweet -is:reply',
 };
 

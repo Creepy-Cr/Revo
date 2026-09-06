@@ -12,12 +12,13 @@ export interface MarketQuote {
   ethChange24h: number;
   usdcUsd: number;
   /**
-   * Real-world BTC price, used to sanity check cirBTC swap quotes against a
-   * market rather than against the testnet pool that quotes them.
+   * Real-world BTC price. It sanity checks cirBTC swap quotes against a market
+   * rather than against the testnet pool that quotes them, and it is the
+   * reference the cirBTC signal is built on.
    *
-   * Optional on purpose: CoinGecko occasionally omits an id, and a missing BTC
-   * price should degrade only the swap check, never the dashboard that depends
-   * on ETH and USDC.
+   * Optional on purpose: CoinGecko occasionally omits an id. A missing BTC
+   * price degrades only the swap check and drops the cirBTC momentum
+   * component; it never takes down the dashboard.
    */
   btcUsd?: number;
   btcChange24h?: number;

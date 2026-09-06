@@ -9,7 +9,8 @@ import type { SignalComponent } from './signalComponent';
 
 export interface Signal {
   id: string;
-  asset: string;
+  /** The treasury token this signal is about. Always a symbol the treasury can actually hold on Arc, so an operator is never shown a position they cannot take. Absent when the signal is not scoped to a token at all, such as community sentiment, which is about the DAO rather than a holding - those signals report no asset instead of inventing a ticker for one. */
+  asset?: string | null;
   /** Composite 0-100 score derived from the weighted component scores */
   score: number;
   direction: string;

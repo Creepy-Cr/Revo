@@ -22,7 +22,7 @@ interface ChatMessage {
 
 const SUGGESTIONS = [
   'Why is the risk score where it is?',
-  'Explain the latest ETH signal',
+  'Explain the latest EURC signal',
   'What did the last rebalance change?',
 ];
 

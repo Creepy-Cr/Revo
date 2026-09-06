@@ -32,8 +32,15 @@ export function SignalsFeed() {
                   <div>
                     <div className="text-[15px] font-display tracking-tight text-white mb-1.5 leading-snug">{signal.title}</div>
                     <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.1em] text-muted-foreground tabular-nums">
-                      <span>{signal.asset}</span>
-                      <span className="text-white/20">/</span>
+                      {/* Only token-scoped signals carry an asset. Community
+                          sentiment is about the DAO, not a holding, so it shows
+                          no ticker rather than a made-up one. */}
+                      {signal.asset && (
+                        <>
+                          <span>{signal.asset}</span>
+                          <span className="text-white/20">/</span>
+                        </>
+                      )}
                       <span>CONF {signal.confidence}%</span>
                       <span className="text-white/20">/</span>
                       <span>SCORE {signal.score}</span>

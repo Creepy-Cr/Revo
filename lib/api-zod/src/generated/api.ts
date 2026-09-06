@@ -113,7 +113,7 @@ export const GetTreasuryDashboardResponse = zod.object({
  */
 export const ListSignalsResponseItem = zod.object({
   "id": zod.string(),
-  "asset": zod.string(),
+  "asset": zod.string().nullish().describe('The treasury token this signal is about. Always a symbol the treasury can actually hold on Arc, so an operator is never shown a position they cannot take. Absent when the signal is not scoped to a token at all, such as community sentiment, which is about the DAO rather than a holding - those signals report no asset instead of inventing a ticker for one.'),
   "score": zod.number().describe('Composite 0-100 score derived from the weighted component scores'),
   "direction": zod.string(),
   "title": zod.string(),

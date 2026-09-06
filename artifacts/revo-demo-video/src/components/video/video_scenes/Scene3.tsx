@@ -48,8 +48,8 @@ export function Scene3() {
             </div>
             <div className="flex gap-6 text-sm font-mono tracking-widest">
               <span><span className="text-white/60">USDC</span> <span className="text-white">85.0%</span></span>
-              <span><span className="text-white/60">ETH</span> <span className="text-white">10.0%</span></span>
-              <span><span className="text-white/60">WBTC</span> <span className="text-white">5.0%</span></span>
+              <span><span className="text-white/60">EURC</span> <span className="text-white">10.0%</span></span>
+              <span><span className="text-white/60">cirBTC</span> <span className="text-white">5.0%</span></span>
             </div>
           </div>
 

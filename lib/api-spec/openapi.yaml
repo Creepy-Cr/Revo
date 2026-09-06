@@ -853,12 +853,19 @@ components:
           description: The actual observation backing this component score
     Signal:
       type: object
-      required: [id, asset, score, direction, title, sources, confidence, time, detail, components]
+      required: [id, score, direction, title, sources, confidence, time, detail, components]
       properties:
         id:
           type: string
         asset:
           type: string
+          nullable: true
+          description: >-
+            The treasury token this signal is about. Always a symbol the treasury can
+            actually hold on Arc, so an operator is never shown a position they cannot
+            take. Absent when the signal is not scoped to a token at all, such as
+            community sentiment, which is about the DAO rather than a holding - those
+            signals report no asset instead of inventing a ticker for one.
         score:
           type: number
           description: Composite 0-100 score derived from the weighted component scores
