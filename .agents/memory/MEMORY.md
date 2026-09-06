@@ -16,7 +16,7 @@
 - [Tower quoting on Arc](tower-arc-quoting.md) — its amounts, fractions and risk fields each lie in a different way; a quote never authorises a trade.
 - [Arc DEX ground truth](arc-dex-liquidity.md) — judge pools by reading them over RPC, not through the aggregator; depth and price sanity are independent.
 - [On-chain allocations](onchain-allocations.md) — read composition from the wallet; a failed RPC read must never render as a zero balance.
-- [Arc gas is USDC](arc-gas-is-usdc.md) — gas comes out of the balance being sent, so a full-balance withdrawal always reverts; check spendable, not held.
+- [Arc gas is USDC](arc-gas-is-usdc.md) — gas comes out of the balance being sent: check spendable not held, and report the spend across every leg or not at all.
 - [Proposal response shared shape](proposal-response-shared-shape.md) — the drill rides the proposal schema with display-only statuses; never enum that field.
 - [Workspace typecheck truth](workspace-typecheck-truth.md) — per-artifact tsc invents errors from stale reference declarations; only the root typecheck is trustworthy.
 - [Treasury token set fan-out](treasury-token-set-fanout.md) — the holdable token set is restated across artifacts with nothing enforcing agreement; changing it is always a sweep.

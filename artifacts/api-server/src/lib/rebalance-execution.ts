@@ -45,11 +45,13 @@ import {
   ChainError,
   EXPLORER_URL,
   USDC_ADDRESS,
+  USDC_DECIMALS,
   broadcastSignedTransfer,
   confirmTransfer,
   creditedByReceipt,
   encodeApproval,
   ensureTreasuryWallet,
+  gasCostMicroUsdc,
   gasReserveMicroUsdc,
   getConfirmedReceipt,
   readAllowance,
@@ -160,6 +162,13 @@ export interface SwapSettlement extends RealisedOutcome {
   /** The floor the swap was signed against. */
   minOutput: string;
   feeTier: number;
+  /**
+   * What this rebalance paid Arc in gas, in USDC: the swap plus the allowance
+   * approval it had to send first, since both come out of the treasury's own
+   * balance. Null when it could not be read from the receipts, which is "not
+   * known" and never "free".
+   */
+  gasCostUsdc: string | null;
   /** Present only when this rebalance had to raise the router's allowance. */
   approvalTxHash?: string;
 }
@@ -599,6 +608,25 @@ function encodeSwap(leg: SwapLeg, recipient: string, feeTier: number, minOut: bi
   });
 }
 
+/**
+ * What a rebalance's transactions cost the treasury in gas, in USDC.
+ *
+ * Every leg is counted, because Arc bills each one to the treasury's own USDC
+ * balance: the swap and, when the router had to be allowed first, the
+ * approval. A leg whose gas could not be read makes the whole figure unknown
+ * rather than smaller, since a partial sum presented as the cost understates
+ * it exactly the way a zero would.
+ */
+function totalGasUsdc(receipts: (ConfirmedReceipt | undefined)[]): string | null {
+  let totalMicro = 0n;
+  for (const receipt of receipts) {
+    const micro = gasCostMicroUsdc(receipt);
+    if (micro === null) return null;
+    totalMicro += micro;
+  }
+  return fromBaseUnits(totalMicro, USDC_DECIMALS);
+}
+
 /** Maps a chain failure onto whether the treasury's value can still move. */
 function classify(error: unknown, stage: string, txHash?: string): RebalanceOutcome {
   if (error instanceof ChainError) {
@@ -675,6 +703,8 @@ export async function settleRebalance(
   const swapData = encodeSwap(leg, wallet.address, feeTier, minOut);
 
   let approvalTxHash: Hex | undefined;
+  /** Kept for its gas: the approval is part of what this rebalance cost. */
+  let approvalReceipt: ConfirmedReceipt | undefined;
   let swapHash: Hex | undefined;
   let claimLost = false;
 
@@ -702,7 +732,7 @@ export async function settleRebalance(
         await broadcastSignedTransfer(signedApproval);
         // The approval has to be mined before the swap can be simulated
         // truthfully, so this one waits inside the lock.
-        await confirmTransfer(signedApproval.hash);
+        approvalReceipt = await confirmTransfer(signedApproval.hash);
       }
 
       // Simulated with the allowance in place, against the real router, at
@@ -800,6 +830,11 @@ export async function settleRebalance(
       expectedOutput: quote.expectedOutput ?? "0",
       minOutput: quote.minOutput,
       feeTier,
+      // Straight out of the receipts already in hand, so what the trading
+      // itself took out of the treasury is on the record beside the fill.
+      gasCostUsdc: totalGasUsdc(
+        approvalTxHash ? [approvalReceipt, receipt] : [receipt],
+      ),
       ...realised,
       ...(approvalTxHash ? { approvalTxHash } : {}),
     },

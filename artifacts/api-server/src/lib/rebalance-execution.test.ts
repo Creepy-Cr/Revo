@@ -49,6 +49,14 @@ function receipt(...logs: ReturnType<typeof transferLog>[]) {
   return { status: "success", logs };
 }
 
+/** Arc's gas price in wei, the same one the gas reserve is derived from. */
+const GAS_PRICE_WEI = 25_200_000_000n;
+
+/** A receipt that also says what Arc billed the wallet for the transaction. */
+function billedReceipt(gasUsed: bigint, ...logs: ReturnType<typeof transferLog>[]) {
+  return { ...receipt(...logs), gasUsed, effectiveGasPrice: GAS_PRICE_WEI };
+}
+
 vi.mock("./holdings", () => ({ readCustodyHoldings }));
 
 vi.mock("./synthra", async (importOriginal) => {
@@ -626,6 +634,66 @@ describe("settleRebalance", () => {
     expect(outcome.settlement.realisedOutput).toBe("424.15");
     expect(outcome.settlement.holdingsAfter.map((h) => h.percentage)).toEqual([null, null, null]);
     expect(outcome.settlement.realisedNote).toContain("cirBTC");
+  });
+
+  it("records what the rebalance paid Arc in gas, out of the treasury's own balance", async () => {
+    // The router is already allowed, so the swap is the only leg with a bill.
+    readAllowance.mockResolvedValue(10n ** 12n);
+    confirmTransfer.mockResolvedValue(
+      billedReceipt(180_000n, transferLog(EURC, WALLET, 424_400_000n)),
+    );
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    // 180,000 units at 25.2 gwei, billed in USDC out of the balance itself.
+    expect(outcome.settlement.gasCostUsdc).toBe("0.004536");
+    // The fill is the router's payout, so it is gross of that cost.
+    expect(outcome.settlement.realisedOutput).toBe("424.4");
+  });
+
+  it("counts the allowance approval's gas, because the treasury paid for that too", async () => {
+    confirmTransfer
+      // The approval: 46,000 units at 25.2 gwei is 0.0011592 USDC, and the
+      // fraction of a micro-USDC rounds up rather than being dropped.
+      .mockResolvedValueOnce(billedReceipt(46_000n))
+      .mockResolvedValueOnce(billedReceipt(180_000n, transferLog(EURC, WALLET, 424_400_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.settlement.approvalTxHash).toBe(HASHES[0]);
+    // 0.00116 approval plus 0.004536 swap: what the whole rebalance cost.
+    expect(outcome.settlement.gasCostUsdc).toBe("0.005696");
+  });
+
+  it("reports the gas as not known when the receipt does not carry what it cost", async () => {
+    readAllowance.mockResolvedValue(10n ** 12n);
+    confirmTransfer.mockResolvedValue(receipt(transferLog(EURC, WALLET, 424_400_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    // A cost that could not be read is not a rebalance that traded for free.
+    expect(outcome.settlement.gasCostUsdc).toBeNull();
+    expect(outcome.settlement.realisedOutput).toBe("424.4");
+  });
+
+  it("will not report a partial gas total when one leg's receipt is unreadable", async () => {
+    confirmTransfer
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(billedReceipt(180_000n, transferLog(EURC, WALLET, 424_400_000n)));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    // The swap's own gas is readable, but the approval's is not, so the
+    // rebalance's cost is unknown rather than understated by that leg.
+    expect(outcome.settlement.gasCostUsdc).toBeNull();
   });
 
   it("never routes the untradable leg, even when it is the furthest from target", async () => {

@@ -121,8 +121,13 @@ async function writeIfStillApproved(
  * realised fill and the composition it produced lead here, and the quote is
  * kept beside them as the thing being measured against.
  *
- * When the post-trade read failed, the entry says so in as many words. It
- * never falls back to reporting the quote as though it were the fill.
+ * The gas sits with them, because Arc bills it in USDC out of the treasury's
+ * own balance: it is money this rebalance spent, and reporting the fill gross
+ * of it would otherwise leave it invisible.
+ *
+ * When a read failed, the entry says so in as many words. It never falls back
+ * to reporting the quote as though it were the fill, and never reports gas it
+ * could not read as nothing paid.
  */
 function describeSettlement(settlement: SwapSettlement, action: string): string {
   const tier = `${settlement.feeTier / 10_000}% tier`;
@@ -147,6 +152,13 @@ function describeSettlement(settlement: SwapSettlement, action: string): string 
       );
     }
   }
+
+  const gasCostUsdc = settlement.gasCostUsdc ?? null;
+  parts.push(
+    gasCostUsdc === null
+      ? "The Arc gas this rebalance paid could not be read from its receipt, so what it cost is not known."
+      : `Arc gas for this rebalance cost ${gasCostUsdc} USDC, taken from the treasury's own balance.`,
+  );
 
   if (holdingsAfter.length > 0) {
     parts.push(`The treasury now holds ${describeHoldings(holdingsAfter)}.`);
@@ -336,6 +348,9 @@ export function startProposalSettlement(
                 minOutput: settled.settlement.minOutput,
                 realisedOutput: settled.settlement.realisedOutput,
                 realisedSlippagePct: settled.settlement.realisedSlippagePct,
+                // What the trade itself cost the treasury, beside what it
+                // achieved. Null is "not known", never "nothing paid".
+                gasCostUsdc: settled.settlement.gasCostUsdc ?? null,
               }
             : {}),
         },

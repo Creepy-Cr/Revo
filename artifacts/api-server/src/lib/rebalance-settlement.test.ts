@@ -42,9 +42,12 @@ vi.mock("./arc-chain", async (importOriginal) => {
   return { ...actual, getTransferRecoveryStatus };
 });
 
-const { reconcileApprovedProposals, settleApprovedProposal } = await import(
-  "./rebalance-settlement"
-);
+const {
+  drainProposalSettlements,
+  reconcileApprovedProposals,
+  settleApprovedProposal,
+  startProposalSettlement,
+} = await import("./rebalance-settlement");
 
 const TX_HASH = `0x${"ab".repeat(32)}`;
 const TARGETS = [
@@ -70,6 +73,7 @@ function settled(overrides: Record<string, unknown> = {}) {
       explorerUrl: `https://explorer/${TX_HASH}`,
       realisedOutput: "424.15",
       realisedSlippagePct: 0.2,
+      gasCostUsdc: "0.005696",
       holdingsAfter: [
         { symbol: "USDC", units: "499.98992", percentage: 50.4 },
         { symbol: "EURC", units: "424.15", percentage: 49.6 },
@@ -184,6 +188,51 @@ describe("settling an approved proposal", () => {
       "The treasury now holds 499.98992 USDC (50.4%) and 424.15 EURC (49.6%).",
     );
     expect(logged!.detail).toContain("Target: 50% USDC / 50% EURC.");
+  });
+
+  it("tells the operator what the rebalance cost in gas, beside what it filled", async () => {
+    const id = await seedProposal({ executionTxHash: null });
+    settleRebalance.mockResolvedValue(settled());
+
+    await settleApprovedProposal(treasuryId, await proposal(id), null);
+
+    const [logged] = await activities();
+    // Arc bills gas in USDC out of the treasury, and the fill is reported
+    // gross of it, so the cost is only visible if it is stated.
+    expect(logged!.detail).toContain(
+      "Arc gas for this rebalance cost 0.005696 USDC, taken from the treasury's own balance.",
+    );
+  });
+
+  it("says the gas cost is not known rather than reporting the trade as free", async () => {
+    const id = await seedProposal({ executionTxHash: null });
+    settleRebalance.mockResolvedValue(settled({ gasCostUsdc: null }));
+
+    await settleApprovedProposal(treasuryId, await proposal(id), null);
+
+    const [logged] = await activities();
+    expect(logged!.detail).toContain("what it cost is not known");
+    expect(logged!.detail).not.toContain("cost 0 USDC");
+  });
+
+  it("records the gas beside the fill in the settlement audit detail", async () => {
+    const id = await seedProposal({ executionTxHash: null });
+    settleRebalance.mockResolvedValue(settled());
+
+    startProposalSettlement(treasuryId, await proposal(id), null);
+    await drainProposalSettlements();
+
+    const [event] = await db
+      .select()
+      .from(auditEventsTable)
+      .where(eq(auditEventsTable.treasuryId, treasuryId));
+    expect(event).toMatchObject({ action: "proposal.settle", result: "ok" });
+    // Intent, outcome and cost together: comparing rebalances needs all three.
+    expect(event!.detail).toMatchObject({
+      expectedOutput: "425",
+      realisedOutput: "424.15",
+      gasCostUsdc: "0.005696",
+    });
   });
 
   it("says the fill is unknown rather than quoting the quote back as the fill", async () => {

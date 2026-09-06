@@ -754,3 +754,32 @@ export function creditedByReceipt(
     return null;
   }
 }
+
+/**
+ * What a confirmed transaction actually paid Arc in gas, in micro-USDC.
+ *
+ * Arc settles gas in USDC out of the sending wallet's own balance, so this is
+ * treasury money spent rather than a fee paid in some separate gas token. The
+ * receipt carries both halves of it, so the exact figure costs no extra read.
+ *
+ * Null means "not known", and specifically never zero. A mined transaction
+ * burns a non-zero amount of gas at a non-zero price on Arc, so a missing or
+ * zero field is a node that did not report the cost rather than a transaction
+ * that was free, and reporting it as free would understate what was spent.
+ *
+ * Non-throwing for the same reason `creditedByReceipt` is: every caller is
+ * describing a transaction that has already confirmed.
+ */
+export function gasCostMicroUsdc(
+  receipt: Pick<ConfirmedReceipt, "gasUsed" | "effectiveGasPrice"> | null | undefined,
+): bigint | null {
+  const gasUsed = receipt?.gasUsed;
+  const price = receipt?.effectiveGasPrice;
+  if (typeof gasUsed !== "bigint" || typeof price !== "bigint") return null;
+  if (gasUsed <= 0n || price <= 0n) return null;
+  // Native USDC carries 18 decimals; the ERC-20 interface over it carries 6.
+  const wei = gasUsed * price;
+  const micro = wei / 10n ** 12n;
+  // Round up, so a cost is never reported as less than what was spent.
+  return wei % 10n ** 12n === 0n ? micro : micro + 1n;
+}
