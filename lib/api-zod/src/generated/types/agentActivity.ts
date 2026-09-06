@@ -15,4 +15,14 @@ export interface AgentActivity {
   status: string;
   /** How this event relates to real money movement. "onchain" means a real Arc Testnet transaction settled. "simulated" means internal accounting only, with no protocol swap and no transaction. "system" means a governance or control event that moves no funds. Consumers should use this field rather than parsing the title. */
   kind: AgentActivityKind;
+  /**
+     * Arc Testnet transaction this event reports on, when there is one.
+     * @nullable
+     */
+  txHash?: string | null;
+  /**
+     * Block-explorer link for txHash, when there is one.
+     * @nullable
+     */
+  explorerTxUrl?: string | null;
 }

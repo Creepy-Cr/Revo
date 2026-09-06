@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useListTreasuryProposals, useApproveTreasuryProposal, useRejectTreasuryProposal, getListTreasuryProposalsQueryKey, getGetTreasuryDashboardQueryKey } from '@workspace/api-client-react';
-import { Check, X, ShieldAlert } from 'lucide-react';
+import { Check, X, ShieldAlert, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from './auth-context';
 import { RejectDialog } from './reject-dialog';
@@ -30,14 +30,21 @@ export function Proposals() {
       return;
     }
     approve.mutate({ proposalId: id }, {
-      onSuccess: () => {
+      onSuccess: (proposal) => {
         toast({
-          title: 'Rebalance applied',
-          description: 'Simulated allocation change. No on-chain transaction was sent.',
+          title: proposal.executionTxHash ? 'Rebalance settled on Arc' : 'Rebalance approved',
+          description: proposal.executionTxHash
+            ? `Swap confirmed. Transaction ${proposal.executionTxHash.slice(0, 10)}…`
+            : 'No swap was needed: holdings already match the approved target.',
         });
         invalidate();
       },
-      onError: (err) => toast({ title: 'Rebalance failed', description: apiErrorMessage(err), variant: 'destructive' })
+      // A failed settlement returns the proposal to pending, so the feed and
+      // the buttons have to refresh either way - the operator can act again.
+      onError: (err) => {
+        toast({ title: 'Rebalance did not settle', description: apiErrorMessage(err), variant: 'destructive' });
+        invalidate();
+      }
     });
   };
 
@@ -87,6 +94,9 @@ export function Proposals() {
             const isExec = p.status === 'executed';
             const isPend = p.status === 'pending';
             const isRej = p.status === 'rejected';
+            // "approved" is a decision, not a settlement. It gets its own
+            // colour so it can never be read as a completed trade.
+            const isApproved = p.status === 'approved';
 
             // Keyed by the real Arc tokens the treasury can hold. Matches the
             // tones the allocations panel uses so one asset reads the same
@@ -102,14 +112,20 @@ export function Proposals() {
               <div key={p.id} className="relative flex flex-col group border-b border-white/[0.08] pb-6 last:border-b-0 last:pb-0">
                 <div className="flex justify-between items-start mb-2">
                   <div className="font-display text-xl text-white pr-4 leading-snug tracking-tight">{p.title}</div>
-                  <div className={`shrink-0 flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-[0.1em] uppercase mt-1 ${isExec ? 'text-green-400' : isPend ? 'text-yellow-400' : isRej ? 'text-red-400' : 'text-muted-foreground'}`}>
-                    {isPend && <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-ping opacity-75 absolute -ml-3" />}
-                    <div className={`w-1.5 h-1.5 rounded-sm ${isExec ? 'bg-green-400' : isPend ? 'bg-yellow-400' : isRej ? 'bg-red-400' : 'bg-white/40'}`} />
+                  <div className={`shrink-0 flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-[0.1em] uppercase mt-1 ${isExec ? 'text-green-400' : isPend ? 'text-yellow-400' : isRej ? 'text-red-400' : isApproved ? 'text-cyan-400' : 'text-muted-foreground'}`}>
+                    {(isPend || isApproved) && <div className={`w-1.5 h-1.5 rounded-full ${isApproved ? 'bg-cyan-400' : 'bg-yellow-400'} animate-ping opacity-75 absolute -ml-3`} />}
+                    <div className={`w-1.5 h-1.5 rounded-sm ${isExec ? 'bg-green-400' : isPend ? 'bg-yellow-400' : isRej ? 'bg-red-400' : isApproved ? 'bg-cyan-400' : 'bg-white/40'}`} />
                     {p.status}
                   </div>
                 </div>
                 <div className="text-sm text-muted-foreground mb-6 leading-relaxed">{p.summary}</div>
-                
+
+                {isApproved && (
+                  <div className="mb-6 border-l-2 border-cyan-400/40 bg-cyan-400/[0.04] px-3 py-2 text-[11px] leading-relaxed text-white/50">
+                    Approved, but the swap has not confirmed on Arc. Holdings have not moved yet.
+                  </div>
+                )}
+
                 {p.targetAllocations && p.targetAllocations.length > 0 && (
                   <div className="flex flex-col mb-6">
                     <div className="text-[10px] font-mono uppercase tracking-[0.1em] text-muted-foreground mb-2">TARGET ALLOCATION</div>
@@ -130,6 +146,17 @@ export function Proposals() {
                       ))}
                     </div>
                   </div>
+                )}
+
+                {isExec && p.explorerTxUrl && (
+                  <a
+                    href={p.explorerTxUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mb-2 inline-flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-[0.1em] text-green-400/70 transition-colors hover:text-green-400"
+                  >
+                    <ExternalLink className="h-3 w-3" /> Settlement tx {p.executionTxHash?.slice(0, 10)}…
+                  </a>
                 )}
 
                 {isPend && (

@@ -1,4 +1,5 @@
 import { type AgentActivity } from '@workspace/api-client-react';
+import { ExternalLink } from 'lucide-react';
 
 /**
  * The activity feed mixes real Arc Testnet settlements with simulated
@@ -36,6 +37,17 @@ export function ActivityLog({ activities }: { activities?: AgentActivity[] }) {
                       <span className="text-white/80 font-medium">{a.title}</span>
                     </div>
                     <div className="text-white/40 leading-snug">{a.detail}</div>
+                    {a.explorerTxUrl && (
+                      <a
+                        href={a.explorerTxUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex w-fit items-center gap-1.5 text-primary/70 transition-colors hover:text-primary"
+                      >
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{a.txHash}</span>
+                      </a>
+                    )}
                   </div>
                 </div>
               );

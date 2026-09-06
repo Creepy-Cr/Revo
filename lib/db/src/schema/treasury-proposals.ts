@@ -19,8 +19,14 @@ export const treasuryProposalsTable = pgTable("treasury_proposals", {
   command: text("command").notNull(),
   /** Policy that generated this proposal (null for legacy one-off proposals). */
   policyId: text("policy_id"),
-  /** Structured allocation targets the simulated rebalance applies on approval. */
+  /** Structured allocation targets the approved rebalance settles towards. */
   targetAllocations: jsonb("target_allocations").$type<AllocationTarget[]>(),
+  /**
+   * Arc Testnet hash of the swap that settled this rebalance. Written only
+   * once a transaction has been broadcast, so `executed` without a hash is
+   * impossible for any proposal that carried allocation targets.
+   */
+  executionTxHash: text("execution_tx_hash"),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
 });
 

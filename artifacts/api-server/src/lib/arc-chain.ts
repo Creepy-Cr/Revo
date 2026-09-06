@@ -53,6 +53,8 @@ export const fromMicroUsdc = (micro: bigint): number => Number(micro) / 1e6;
 const erc20Abi = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
   "function balanceOf(address owner) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 value) returns (bool)",
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 ]);
 
@@ -75,7 +77,8 @@ export class ChainError extends Error {
       | "TX_REVERTED"
       | "NOT_A_DEPOSIT"
       | "SEND_FAILED"
-      | "SEND_UNCERTAIN",
+      | "SEND_UNCERTAIN"
+      | "SIMULATION_REVERTED",
     message: string,
   ) {
     super(message);
@@ -116,7 +119,7 @@ const publicClient = createPublicClient({
  * operation so an endpoint that rebinds mid-process is still refused - this
  * service never touches a non-testnet chain.
  */
-async function assertArcTestnet(): Promise<void> {
+export async function assertArcTestnet(): Promise<void> {
   let reportedId: number;
   try {
     reportedId = await publicClient.getChainId();
@@ -428,6 +431,134 @@ export async function signUsdcTransfer(
       `The withdrawal could not be prepared (nothing was broadcast): ${safeUpstreamDetail(error)}`,
     );
   }
+}
+
+/** Current ERC-20 allowance the custody wallet has granted a spender. */
+export async function readAllowance(
+  token: Address,
+  owner: string,
+  spender: Address,
+): Promise<bigint> {
+  await assertArcTestnet();
+  try {
+    return (await publicClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [owner as Address, spender],
+    })) as bigint;
+  } catch (error) {
+    throw new ChainError(
+      "RPC_UNAVAILABLE",
+      `Arc Testnet RPC failed while reading the token allowance: ${safeUpstreamDetail(error)}`,
+    );
+  }
+}
+
+/** Calldata for an exact-amount ERC-20 approval. */
+export function encodeApproval(spender: Address, amount: bigint): Hex {
+  return encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [spender, amount] });
+}
+
+/**
+ * Runs a contract call through `eth_call` as if the custody wallet had sent
+ * it, WITHOUT signing anything. A revert here is the cheapest honest way to
+ * find out that a transaction would fail, and it happens before any key is
+ * touched, so a refusal at this point definitively moved nothing.
+ */
+export async function simulateCustodyCall(
+  from: string,
+  to: Address,
+  data: Hex,
+): Promise<void> {
+  await assertArcTestnet();
+  try {
+    await publicClient.call({ account: from as Address, to, data });
+  } catch (error) {
+    const message = safeUpstreamDetail(error);
+    // A transport failure is not a revert: refusing on one would report a
+    // healthy transaction as broken. Only a real execution failure blocks.
+    if (
+      error instanceof BaseError &&
+      error.walk((e) => e instanceof HttpRequestError || e instanceof TimeoutError) !== null
+    ) {
+      throw new ChainError(
+        "RPC_UNAVAILABLE",
+        `Arc Testnet RPC could not simulate the transaction, so it was not signed: ${message}`,
+      );
+    }
+    throw new ChainError(
+      "SIMULATION_REVERTED",
+      `Simulation reverted, so nothing was signed or sent: ${message}`,
+    );
+  }
+}
+
+/**
+ * Prepares and locally signs an arbitrary custody-wallet contract call. Same
+ * contract as `signUsdcTransfer`: nothing reaches the mempool here, so any
+ * failure in this step definitively moved nothing, and the returned hash is
+ * derived from the signed payload so the caller can persist it before
+ * broadcasting.
+ */
+export async function signCustodyCall(
+  wallet: TreasuryWallet,
+  to: Address,
+  data: Hex,
+  executor: CustodyExecutor = db,
+): Promise<SignedTransfer> {
+  await assertArcTestnet();
+  const account = privateKeyToAccount(await custodySigningKey(wallet, executor));
+  try {
+    const [nonce, gas, fees] = await Promise.all([
+      publicClient.getTransactionCount({ address: account.address, blockTag: "pending" }),
+      publicClient.estimateGas({ account: account.address, to, data }),
+      publicClient.estimateFeesPerGas(),
+    ]);
+    const serialized = await account.signTransaction({
+      chainId: ARC_TESTNET_CHAIN_ID,
+      type: "eip1559",
+      to,
+      data,
+      value: 0n,
+      nonce,
+      gas: (gas * 12n) / 10n,
+      maxFeePerGas: fees.maxFeePerGas,
+      maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+    });
+    return { hash: keccak256(serialized), serialized, nonce };
+  } catch (error) {
+    throw new ChainError(
+      "SEND_FAILED",
+      `The transaction could not be prepared (nothing was broadcast): ${safeUpstreamDetail(error)}`,
+    );
+  }
+}
+
+/**
+ * Micro-USDC that must stay behind to pay for `gasUnits` of execution.
+ *
+ * Gas on Arc is settled in USDC out of the very balance a transfer moves, so
+ * a swap sized at the full USDC balance always reverts at estimation. Callers
+ * size spendable balances against this rather than against what is held.
+ */
+export async function gasReserveMicroUsdc(gasUnits: bigint): Promise<bigint> {
+  await assertArcTestnet();
+  let fees;
+  try {
+    fees = await publicClient.estimateFeesPerGas();
+  } catch (error) {
+    throw new ChainError(
+      "RPC_UNAVAILABLE",
+      `Arc Testnet gas price could not be read, so no spendable balance could be derived: ${safeUpstreamDetail(error)}`,
+    );
+  }
+  // Native USDC carries 18 decimals; the ERC-20 interface over it carries 6.
+  const wei = gasUnits * fees.maxFeePerGas;
+  const micro = wei / 10n ** 12n;
+  // Round up: reserving a fraction too little is the failure mode that costs
+  // a reverted swap, and one extra micro-USDC costs nothing.
+  return wei % 10n ** 12n === 0n ? micro : micro + 1n;
 }
 
 /** Transport-level failures where the node MAY still have received the tx. */

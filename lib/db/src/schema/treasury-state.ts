@@ -50,6 +50,12 @@ export const agentActivitiesTable = pgTable("agent_activities", {
   detail: text("detail").notNull(),
   status: text("status").notNull(),
   kind: text("kind").notNull().default("system"),
+  /**
+   * Arc Testnet transaction this row reports on, when there is one. Kept as a
+   * column rather than embedded in `detail` so the console can render a real
+   * explorer link instead of leaving an operator to copy a hash out of prose.
+   */
+  txHash: text("tx_hash"),
 });
 
 export type AgentActivity = typeof agentActivitiesTable.$inferSelect;

@@ -89,6 +89,16 @@ export interface AgentActivity {
   status: string;
   /** How this event relates to real money movement. "onchain" means a real Arc Testnet transaction settled. "simulated" means internal accounting only, with no protocol swap and no transaction. "system" means a governance or control event that moves no funds. Consumers should use this field rather than parsing the title. */
   kind: AgentActivityKind;
+  /**
+     * Arc Testnet transaction this event reports on, when there is one.
+     * @nullable
+     */
+  txHash?: string | null;
+  /**
+     * Block-explorer link for txHash, when there is one.
+     * @nullable
+     */
+  explorerTxUrl?: string | null;
 }
 
 export interface Guardrail {
@@ -173,7 +183,7 @@ export interface TreasuryProposal {
   id: string;
   title: string;
   summary: string;
-  /** pending | executed | rejected | simulation-ready (legacy) */
+  /** pending | approved | executed | rejected | simulation-ready (legacy, treated as pending). "approved" means the operator accepted the proposal and its swap is settling or its outcome is unresolved - the money has NOT been confirmed moved. "executed" means the rebalance swap confirmed on Arc, and for any proposal carrying targetAllocations that implies executionTxHash is set. Not modelled as an enum: the in-memory safety drill shares this shape and reports its own display-only phases (PENDING, EXECUTING, EXECUTED) that belong to no real proposal and cannot be approved. */
   status: string;
   createdAt: string;
   action: string;
@@ -183,6 +193,16 @@ export interface TreasuryProposal {
   policyId?: string | null;
   /** @nullable */
   targetAllocations?: AllocationTarget[] | null;
+  /**
+     * Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read "executed" without one.
+     * @nullable
+     */
+  executionTxHash?: string | null;
+  /**
+     * Block-explorer link for executionTxHash, when there is one.
+     * @nullable
+     */
+  explorerTxUrl?: string | null;
   /** @nullable */
   decidedAt?: string | null;
 }

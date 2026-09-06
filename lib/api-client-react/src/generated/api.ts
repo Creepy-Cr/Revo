@@ -861,6 +861,7 @@ export const getApproveTreasuryPolicyUrl = (policyId: string,) => {
 }
 
 /**
+ * In Autonomous mode the drafted rebalance is also settled on Arc as a real swap. Activation always succeeds on its own terms; a swap that does not settle leaves the proposal actionable rather than executed.
  * @summary Approve a policy draft; activates it and lets the engine draft a rebalance proposal
  */
 export const approveTreasuryPolicy = async (policyId: string, options?: Parameters<typeof customFetch>[1]): Promise<Policy> => {
@@ -1016,7 +1017,8 @@ export const getApproveTreasuryProposalUrl = (proposalId: string,) => {
 }
 
 /**
- * @summary Approve a proposal; executes the simulated rebalance on the dashboard
+ * Sizes the swap against the custody wallet's live balances, quotes it on Synthra, simulates it with eth_call, and only then signs and broadcasts it. The proposal returns "executed" only after that swap confirms, with executionTxHash set. A quote that is not tradable, a simulation revert, or a reverted swap returns 502 and leaves the proposal actionable.
+ * @summary Approve a proposal; settles the rebalance as a real swap on Arc
  */
 export const approveTreasuryProposal = async (proposalId: string, options?: Parameters<typeof customFetch>[1]): Promise<TreasuryProposal> => {
 
@@ -1035,7 +1037,7 @@ export const approveTreasuryProposal = async (proposalId: string, options?: Para
 
 export const getApproveTreasuryProposalMutationKey = () => ['approveTreasuryProposal'] as const;
 
-export const getApproveTreasuryProposalMutationOptions = <TError = ErrorType<unknown>,
+export const getApproveTreasuryProposalMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveTreasuryProposal>>, TError,ApproveTreasuryProposalMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof approveTreasuryProposal>>, TError,ApproveTreasuryProposalMutationVariables, TContext> => {
 
@@ -1064,13 +1066,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ApproveTreasuryProposalMutationResult = NonNullable<Awaited<ReturnType<typeof approveTreasuryProposal>>>
 
-    export type ApproveTreasuryProposalMutationError = ErrorType<unknown>
+    export type ApproveTreasuryProposalMutationError = ErrorType<void>
     export type ApproveTreasuryProposalMutationVariables = {proposalId: string}
 
     /**
- * @summary Approve a proposal; executes the simulated rebalance on the dashboard
+ * @summary Approve a proposal; settles the rebalance as a real swap on Arc
  */
-export const useApproveTreasuryProposal = <TError = ErrorType<unknown>,
+export const useApproveTreasuryProposal = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveTreasuryProposal>>, TError,ApproveTreasuryProposalMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof approveTreasuryProposal>>,

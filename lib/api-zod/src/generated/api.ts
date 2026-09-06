@@ -89,7 +89,9 @@ export const GetTreasuryDashboardResponse = zod.object({
   "title": zod.string(),
   "detail": zod.string(),
   "status": zod.string(),
-  "kind": zod.enum(['onchain', 'simulated', 'system']).describe('How this event relates to real money movement. \"onchain\" means a real Arc Testnet transaction settled. \"simulated\" means internal accounting only, with no protocol swap and no transaction. \"system\" means a governance or control event that moves no funds. Consumers should use this field rather than parsing the title.')
+  "kind": zod.enum(['onchain', 'simulated', 'system']).describe('How this event relates to real money movement. \"onchain\" means a real Arc Testnet transaction settled. \"simulated\" means internal accounting only, with no protocol swap and no transaction. \"system\" means a governance or control event that moves no funds. Consumers should use this field rather than parsing the title.'),
+  "txHash": zod.string().nullish().describe('Arc Testnet transaction this event reports on, when there is one.'),
+  "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for txHash, when there is one.')
 })),
   "guardrails": zod.array(zod.object({
   "id": zod.string(),
@@ -137,7 +139,7 @@ export const ListTreasuryProposalsResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "summary": zod.string(),
-  "status": zod.string().describe('pending | executed | rejected | simulation-ready (legacy)'),
+  "status": zod.string().describe('pending | approved | executed | rejected | simulation-ready (legacy, treated as pending). \"approved\" means the operator accepted the proposal and its swap is settling or its outcome is unresolved - the money has NOT been confirmed moved. \"executed\" means the rebalance swap confirmed on Arc, and for any proposal carrying targetAllocations that implies executionTxHash is set. Not modelled as an enum: the in-memory safety drill shares this shape and reports its own display-only phases (PENDING, EXECUTING, EXECUTED) that belong to no real proposal and cannot be approved.'),
   "createdAt": zod.string(),
   "action": zod.string(),
   "safetyChecks": zod.array(zod.string()),
@@ -147,6 +149,8 @@ export const ListTreasuryProposalsResponseItem = zod.object({
   "symbol": zod.string(),
   "percentage": zod.number()
 })).nullish(),
+  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read \"executed\" without one.'),
+  "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for executionTxHash, when there is one.'),
   "decidedAt": zod.string().nullish()
 })
 export const ListTreasuryProposalsResponse = zod.array(ListTreasuryProposalsResponseItem)
@@ -225,6 +229,7 @@ export const ListTreasuryPoliciesResponse = zod.array(ListTreasuryPoliciesRespon
 
 
 /**
+ * In Autonomous mode the drafted rebalance is also settled on Arc as a real swap. Activation always succeeds on its own terms; a swap that does not settle leaves the proposal actionable rather than executed.
  * @summary Approve a policy draft; activates it and lets the engine draft a rebalance proposal
  */
 export const ApproveTreasuryPolicyParams = zod.object({
@@ -281,7 +286,8 @@ export const RejectTreasuryPolicyResponse = zod.object({
 
 
 /**
- * @summary Approve a proposal; executes the simulated rebalance on the dashboard
+ * Sizes the swap against the custody wallet's live balances, quotes it on Synthra, simulates it with eth_call, and only then signs and broadcasts it. The proposal returns "executed" only after that swap confirms, with executionTxHash set. A quote that is not tradable, a simulation revert, or a reverted swap returns 502 and leaves the proposal actionable.
+ * @summary Approve a proposal; settles the rebalance as a real swap on Arc
  */
 export const ApproveTreasuryProposalParams = zod.object({
   "proposalId": zod.coerce.string()
@@ -291,7 +297,7 @@ export const ApproveTreasuryProposalResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "summary": zod.string(),
-  "status": zod.string().describe('pending | executed | rejected | simulation-ready (legacy)'),
+  "status": zod.string().describe('pending | approved | executed | rejected | simulation-ready (legacy, treated as pending). \"approved\" means the operator accepted the proposal and its swap is settling or its outcome is unresolved - the money has NOT been confirmed moved. \"executed\" means the rebalance swap confirmed on Arc, and for any proposal carrying targetAllocations that implies executionTxHash is set. Not modelled as an enum: the in-memory safety drill shares this shape and reports its own display-only phases (PENDING, EXECUTING, EXECUTED) that belong to no real proposal and cannot be approved.'),
   "createdAt": zod.string(),
   "action": zod.string(),
   "safetyChecks": zod.array(zod.string()),
@@ -301,6 +307,8 @@ export const ApproveTreasuryProposalResponse = zod.object({
   "symbol": zod.string(),
   "percentage": zod.number()
 })).nullish(),
+  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read \"executed\" without one.'),
+  "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for executionTxHash, when there is one.'),
   "decidedAt": zod.string().nullish()
 })
 
@@ -324,7 +332,7 @@ export const RejectTreasuryProposalResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "summary": zod.string(),
-  "status": zod.string().describe('pending | executed | rejected | simulation-ready (legacy)'),
+  "status": zod.string().describe('pending | approved | executed | rejected | simulation-ready (legacy, treated as pending). \"approved\" means the operator accepted the proposal and its swap is settling or its outcome is unresolved - the money has NOT been confirmed moved. \"executed\" means the rebalance swap confirmed on Arc, and for any proposal carrying targetAllocations that implies executionTxHash is set. Not modelled as an enum: the in-memory safety drill shares this shape and reports its own display-only phases (PENDING, EXECUTING, EXECUTED) that belong to no real proposal and cannot be approved.'),
   "createdAt": zod.string(),
   "action": zod.string(),
   "safetyChecks": zod.array(zod.string()),
@@ -334,6 +342,8 @@ export const RejectTreasuryProposalResponse = zod.object({
   "symbol": zod.string(),
   "percentage": zod.number()
 })).nullish(),
+  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read \"executed\" without one.'),
+  "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for executionTxHash, when there is one.'),
   "decidedAt": zod.string().nullish()
 })
 

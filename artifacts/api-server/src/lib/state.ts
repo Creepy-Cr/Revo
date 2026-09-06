@@ -11,6 +11,7 @@ import {
 import { getMarketQuote, referencePriceFor, type MarketQuote } from "./market";
 import { readCustodyHoldings } from "./holdings";
 import { tradableTokens } from "./arc-tokens";
+import { EXPLORER_URL } from "./arc-chain";
 
 /**
  * Treasury state.
@@ -59,6 +60,10 @@ export type ActivityKind = "onchain" | "simulated" | "system";
  * `kind` defaults to "system" deliberately: understating is the safe failure
  * direction, so a new call site that forgets to pass it can never falsely
  * present itself as an on-chain settlement.
+ *
+ * `txHash` is a separate column rather than prose inside `detail` so the
+ * console can link the transaction. A hash an operator has to copy out of a
+ * sentence is not a link to the settlement, it is a hash in a sentence.
  */
 export async function logActivity(
   treasuryId: string,
@@ -66,6 +71,7 @@ export async function logActivity(
   detail: string,
   status: string,
   kind: ActivityKind = "system",
+  txHash?: string | null,
 ): Promise<void> {
   await db.insert(agentActivitiesTable).values({
     id: `act-${randomUUID()}`,
@@ -75,6 +81,7 @@ export async function logActivity(
     detail,
     status,
     kind,
+    txHash: txHash ?? null,
   });
 }
 
@@ -181,6 +188,8 @@ export interface ComputedDashboard {
     detail: string;
     status: string;
     kind: ActivityKind;
+    txHash: string | null;
+    explorerTxUrl: string | null;
   }[];
   guardrails: { id: string; label: string; value: string; state: string }[];
 }
@@ -343,6 +352,8 @@ export async function computeDashboard(
       detail: row.detail,
       status: row.status,
       kind: row.kind as ActivityKind,
+      txHash: row.txHash,
+      explorerTxUrl: row.txHash ? `${EXPLORER_URL}/tx/${row.txHash}` : null,
     })),
     guardrails: GUARDRAILS,
   };

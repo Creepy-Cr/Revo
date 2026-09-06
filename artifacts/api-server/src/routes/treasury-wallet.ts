@@ -99,6 +99,8 @@ function publicChainError(error: ChainError): string {
       return "The Arc Testnet RPC did not return a definitive broadcast result.";
     case "SEND_FAILED":
       return "Arc Testnet rejected the withdrawal before it was broadcast.";
+    case "SIMULATION_REVERTED":
+      return "The transaction reverted when simulated, so it was never signed.";
     case "RPC_UNAVAILABLE":
       return "Arc Testnet RPC is temporarily unavailable.";
   }

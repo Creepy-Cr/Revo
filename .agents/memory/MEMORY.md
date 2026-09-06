@@ -16,3 +16,4 @@
 - [Arc DEX ground truth](arc-dex-liquidity.md) — judge pools by reading them over RPC, not through the aggregator; depth and price sanity are independent.
 - [On-chain allocations](onchain-allocations.md) — read composition from the wallet; a failed RPC read must never render as a zero balance.
 - [Arc gas is USDC](arc-gas-is-usdc.md) — gas comes out of the balance being sent, so a full-balance withdrawal always reverts; check spendable, not held.
+- [Proposal response shared shape](proposal-response-shared-shape.md) — the drill rides the proposal schema with display-only statuses; never enum that field.

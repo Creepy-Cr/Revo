@@ -152,6 +152,10 @@ paths:
       operationId: approveTreasuryPolicy
       tags: [treasury]
       summary: Approve a policy draft; activates it and lets the engine draft a rebalance proposal
+      description: >-
+        In Autonomous mode the drafted rebalance is also settled on Arc as a
+        real swap. Activation always succeeds on its own terms; a swap that
+        does not settle leaves the proposal actionable rather than executed.
       parameters:
         - name: policyId
           in: path
@@ -193,7 +197,13 @@ paths:
     post:
       operationId: approveTreasuryProposal
       tags: [treasury]
-      summary: Approve a proposal; executes the simulated rebalance on the dashboard
+      summary: Approve a proposal; settles the rebalance as a real swap on Arc
+      description: >-
+        Sizes the swap against the custody wallet's live balances, quotes it on
+        Synthra, simulates it with eth_call, and only then signs and broadcasts
+        it. The proposal returns "executed" only after that swap confirms, with
+        executionTxHash set. A quote that is not tradable, a simulation revert,
+        or a reverted swap returns 502 and leaves the proposal actionable.
       parameters:
         - name: proposalId
           in: path
@@ -202,11 +212,16 @@ paths:
             type: string
       responses:
         "200":
-          description: Proposal executed (simulated)
+          description: The rebalance swap confirmed on Arc; the proposal is executed
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TreasuryProposal"
+        "502":
+          description: >-
+            The swap did not settle. The proposal is returned to "pending" when
+            nothing moved, or held at "approved" when a broadcast swap's outcome
+            could not be observed.
   /treasury/proposals/{proposalId}/reject:
     post:
       operationId: rejectTreasuryProposal
@@ -726,6 +741,12 @@ components:
             only, with no protocol swap and no transaction. "system" means a
             governance or control event that moves no funds. Consumers should use
             this field rather than parsing the title.
+        txHash:
+          type: ["string", "null"]
+          description: Arc Testnet transaction this event reports on, when there is one.
+        explorerTxUrl:
+          type: ["string", "null"]
+          description: Block-explorer link for txHash, when there is one.
     Guardrail:
       type: object
       required: [id, label, value, state]
@@ -879,7 +900,16 @@ components:
           type: string
         status:
           type: string
-          description: pending | executed | rejected | simulation-ready (legacy)
+          description: >-
+            pending | approved | executed | rejected | simulation-ready (legacy,
+            treated as pending). "approved" means the operator accepted the
+            proposal and its swap is settling or its outcome is unresolved - the
+            money has NOT been confirmed moved. "executed" means the rebalance
+            swap confirmed on Arc, and for any proposal carrying
+            targetAllocations that implies executionTxHash is set. Not modelled
+            as an enum: the in-memory safety drill shares this shape and reports
+            its own display-only phases (PENDING, EXECUTING, EXECUTED) that
+            belong to no real proposal and cannot be approved.
         createdAt:
           type: string
         action:
@@ -896,6 +926,15 @@ components:
           type: ["array", "null"]
           items:
             $ref: "#/components/schemas/AllocationTarget"
+        executionTxHash:
+          type: ["string", "null"]
+          description: >-
+            Arc Testnet hash of the swap that settled this rebalance. Written
+            only once a transaction has been broadcast, so a proposal with
+            allocation targets can never read "executed" without one.
+        explorerTxUrl:
+          type: ["string", "null"]
+          description: Block-explorer link for executionTxHash, when there is one.
         decidedAt:
           type: ["string", "null"]
     PolicyRules:
