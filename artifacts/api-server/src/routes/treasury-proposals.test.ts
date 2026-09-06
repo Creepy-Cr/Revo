@@ -21,7 +21,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   agentActivitiesTable,
   alertsTable,
@@ -230,6 +230,15 @@ async function proposalsForPolicy(policyId: string) {
         eq(treasuryProposalsTable.policyId, policyId),
       ),
     );
+}
+
+/** Titles of everything the treasury has told its operators about. */
+async function activityTitles(): Promise<string[]> {
+  const rows = await db
+    .select({ title: agentActivitiesTable.title })
+    .from(agentActivitiesTable)
+    .where(eq(agentActivitiesTable.treasuryId, TEST_TREASURY_ID));
+  return rows.map((row) => row.title);
 }
 
 /** Operator-facing activity rows naming one specific swap. */
@@ -518,6 +527,180 @@ describe("approving a policy in autonomous mode", () => {
     // reconciliation can hand it back without risking a second trade.
     const [proposal] = await proposalsForPolicy(policyId);
     expect(proposal).toMatchObject({ status: "approved", executionTxHash: null });
+  });
+});
+
+/**
+ * Replacing one set of rules with another.
+ *
+ * Two mechanisms decide what a superseded policy can still do. Activation
+ * withdraws the open rebalances of every policy it replaces, and the proposal
+ * claim additionally requires the proposal's own policy to still be active.
+ * They cover different moments: the sweep clears what is open at the instant
+ * of the replacement, and the claim guard catches what was NOT open then - a
+ * rebalance already settling, handed back to the operator afterwards. Between
+ * them they are the only thing stopping rules an operator has already replaced
+ * from trading, so both are driven here, and every test checks the chain
+ * boundary was never reached.
+ */
+describe("replacing an active policy", () => {
+  beforeAll(async () => {
+    // Managed, so an activation drafts its rebalance and stops. What is under
+    // test is which proposals survive a replacement, not how they settle.
+    await setMode("managed");
+  });
+
+  /** Activates a draft and returns the rebalance the engine drafted from it. */
+  async function activate(policyId: string) {
+    const response = await approvePolicy(policyId);
+    expect(response.status).toBe(200);
+    const [drafted] = await proposalsForPolicy(policyId);
+    expect(drafted).toMatchObject({ status: "pending" });
+    return drafted!;
+  }
+
+  async function activePolicies() {
+    return db
+      .select()
+      .from(policiesTable)
+      .where(
+        and(eq(policiesTable.treasuryId, TEST_TREASURY_ID), eq(policiesTable.status, "active")),
+      );
+  }
+
+  it("withdraws the open rebalance of the policy it replaces", async () => {
+    const replacedId = await seedPolicyDraft();
+    const stale = await activate(replacedId);
+    // A proposal an operator raised themselves: no policy owns it, so a
+    // policy being replaced is not a reason to withdraw it.
+    const manualId = await seedProposal();
+
+    const replacementId = await seedPolicyDraft();
+    expect((await approvePolicy(replacementId)).status).toBe(200);
+
+    expect(await policyRow(replacedId)).toMatchObject({ status: "superseded" });
+    expect(await policyRow(replacementId)).toMatchObject({ status: "active" });
+    // The replaced rules have nothing left to execute, and the operator is
+    // told why the rebalance they were looking at disappeared.
+    const withdrawn = await proposalRow(stale.id);
+    expect(withdrawn).toMatchObject({ status: "rejected" });
+    expect(withdrawn.decidedAt).not.toBeNull();
+    expect(await activityTitles()).toContain(`Proposal "${stale.title}" cancelled`);
+    // The new rules have a rebalance of their own to approve instead.
+    expect(await proposalsForPolicy(replacementId)).toMatchObject([{ status: "pending" }]);
+    expect(await proposalRow(manualId)).toMatchObject({ status: "pending", decidedAt: null });
+    expect(settleRebalance).not.toHaveBeenCalled();
+  });
+
+  it("refuses to approve a rebalance whose policy was replaced while it settled", async () => {
+    const replacedId = await seedPolicyDraft();
+    const drafted = await activate(replacedId);
+
+    // Claimed and settling, so the replacement's sweep - which only touches
+    // open proposals - deliberately leaves it where it is.
+    const settling = gate();
+    settleRebalance.mockImplementation(async () => {
+      await settling.promise;
+      return {
+        kind: "refused",
+        reason: "Synthra could not price a tradable USDC to EURC swap, so nothing was signed.",
+      };
+    });
+    expect((await approve(drafted.id)).status).toBe(200);
+
+    expect((await approvePolicy(await seedPolicyDraft())).status).toBe(200);
+    expect(await policyRow(replacedId)).toMatchObject({ status: "superseded" });
+    expect(await proposalRow(drafted.id)).toMatchObject({ status: "approved" });
+
+    // Nothing was signed, so the settlement hands the rebalance back and it is
+    // actionable again - under rules the operator has since replaced.
+    settling.release();
+    await drainProposalSettlements();
+    expect(await proposalRow(drafted.id)).toMatchObject({ status: "pending", decidedAt: null });
+
+    const refused = await approve(drafted.id);
+
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: expect.stringContaining("policy is no longer active"),
+    });
+    // Only the first attempt, made while the policy was still live, ever
+    // reached the chain boundary. The stale approval sent nothing.
+    expect(settleRebalance).toHaveBeenCalledTimes(1);
+    expect(await proposalRow(drafted.id)).toMatchObject({
+      status: "pending",
+      decidedAt: null,
+      executionTxHash: null,
+    });
+  });
+
+  /**
+   * Runs two activations into each other for real, at the one point where
+   * they could both go live.
+   *
+   * Each activation claims a different draft row, so nothing about the claims
+   * themselves keeps the two transactions apart - only the transition lock
+   * does. To hold them there rather than hope the round trips collide, both
+   * are made to park on the same statement: a rebalance left over from an
+   * older policy, which both supersession sweeps must withdraw, is row-locked
+   * here first. Releasing it lets both finish at one instant.
+   */
+  async function raceActivations(firstId: string, secondId: string) {
+    const olderPolicyId = await seedPolicyDraft();
+    await db
+      .update(policiesTable)
+      .set({ status: "superseded" })
+      .where(eq(policiesTable.id, olderPolicyId));
+    const contested = await seedProposal({ policyId: olderPolicyId });
+    const parked = gate();
+    const release = gate();
+    const holding = db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT 1 FROM ${treasuryProposalsTable} WHERE ${treasuryProposalsTable.id} = ${contested} FOR UPDATE`,
+      );
+      parked.release();
+      await release.promise;
+    });
+    await parked.promise;
+
+    const activations = Promise.all([approvePolicy(firstId), approvePolicy(secondId)]);
+    // Long enough for both requests to reach that statement and block.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release.release();
+
+    const [responses] = await Promise.all([activations, holding]);
+    return responses;
+  }
+
+  it("leaves exactly one active policy when two activations land together", async () => {
+    // Nothing is live yet, so the supersession sweep has no policy row of its
+    // own to serialise on: two operators activating their first policy at the
+    // same moment is the case the lock exists for.
+    await db
+      .update(policiesTable)
+      .set({ status: "superseded" })
+      .where(
+        and(eq(policiesTable.treasuryId, TEST_TREASURY_ID), eq(policiesTable.status, "active")),
+      );
+    const firstId = await seedPolicyDraft();
+    const secondId = await seedPolicyDraft();
+
+    const [first, second] = await raceActivations(firstId, secondId);
+
+    // Both drafts were claimable, so both operators are told their policy went
+    // live. The lock decides the order, and the later one supersedes.
+    expect([first.status, second.status]).toEqual([200, 200]);
+    const active = await activePolicies();
+    expect(active).toHaveLength(1);
+    const supersededId = active[0]!.id === firstId ? secondId : firstId;
+    expect(await policyRow(supersededId)).toMatchObject({ status: "superseded" });
+    // Whichever lost has no rebalance an operator could still approve.
+    const openForSuperseded = (await proposalsForPolicy(supersededId)).filter((proposal) =>
+      ["pending", "simulation-ready"].includes(proposal.status),
+    );
+    expect(openForSuperseded).toHaveLength(0);
+    expect(await proposalsForPolicy(active[0]!.id)).toMatchObject([{ status: "pending" }]);
+    expect(settleRebalance).not.toHaveBeenCalled();
   });
 });
 
