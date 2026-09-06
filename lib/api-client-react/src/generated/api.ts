@@ -46,6 +46,9 @@ import type {
   SecurityStatus,
   Signal,
   SignedAuthChallenge,
+  SwapQuote,
+  SwapQuoteInput,
+  SwapVenueStatus,
   TreasuryCommandInput,
   TreasuryDashboard,
   TreasuryProposal,
@@ -2796,5 +2799,162 @@ export const useSetOperatorRole = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSetOperatorRoleMutationOptions(options));
+    }
+
+export const getGetTreasurySwapVenueUrl = () => {
+
+
+
+
+  return `/api/treasury/swap/venue`
+}
+
+/**
+ * @summary Report whether a real on-chain swap venue is usable on Arc Testnet
+ */
+export const getTreasurySwapVenue = async ( options?: Parameters<typeof customFetch>[1]): Promise<SwapVenueStatus> => {
+
+  return customFetch<SwapVenueStatus>(getGetTreasurySwapVenueUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTreasurySwapVenueQueryKey = () => {
+    return [
+    `/api/treasury/swap/venue`
+    ] as const;
+    }
+
+
+export const getGetTreasurySwapVenueQueryOptions = <TData = Awaited<ReturnType<typeof getTreasurySwapVenue>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTreasurySwapVenue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTreasurySwapVenueQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTreasurySwapVenue>>> = ({ signal }) => getTreasurySwapVenue({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTreasurySwapVenue>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTreasurySwapVenueQueryResult = NonNullable<Awaited<ReturnType<typeof getTreasurySwapVenue>>>
+export type GetTreasurySwapVenueQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Report whether a real on-chain swap venue is usable on Arc Testnet
+ */
+
+export function useGetTreasurySwapVenue<TData = Awaited<ReturnType<typeof getTreasurySwapVenue>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTreasurySwapVenue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTreasurySwapVenueQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getQuoteTreasurySwapUrl = () => {
+
+
+
+
+  return `/api/treasury/swap/quote`
+}
+
+/**
+ * @summary Price a real Arc Testnet swap without executing it
+ */
+export const quoteTreasurySwap = async (swapQuoteInput: SwapQuoteInput, options?: Parameters<typeof customFetch>[1]): Promise<SwapQuote> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+return customFetch<SwapQuote>(getQuoteTreasurySwapUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(swapQuoteInput)
+  }
+);}
+
+
+
+
+
+export const getQuoteTreasurySwapMutationKey = () => ['quoteTreasurySwap'] as const;
+
+export const getQuoteTreasurySwapMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof quoteTreasurySwap>>, TError,QuoteTreasurySwapMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof quoteTreasurySwap>>, TError,QuoteTreasurySwapMutationVariables, TContext> => {
+
+const mutationKey = getQuoteTreasurySwapMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof quoteTreasurySwap>>, QuoteTreasurySwapMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  quoteTreasurySwap(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QuoteTreasurySwapMutationResult = NonNullable<Awaited<ReturnType<typeof quoteTreasurySwap>>>
+    export type QuoteTreasurySwapMutationBody = BodyType<SwapQuoteInput>
+    export type QuoteTreasurySwapMutationError = ErrorType<unknown>
+    export type QuoteTreasurySwapMutationVariables = {data: BodyType<SwapQuoteInput>}
+
+    /**
+ * @summary Price a real Arc Testnet swap without executing it
+ */
+export const useQuoteTreasurySwap = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof quoteTreasurySwap>>, TError,QuoteTreasurySwapMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof quoteTreasurySwap>>,
+        TError,
+        QuoteTreasurySwapMutationVariables,
+        TContext
+      > => {
+      return useMutation(getQuoteTreasurySwapMutationOptions(options));
     }
 

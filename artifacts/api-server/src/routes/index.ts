@@ -4,6 +4,7 @@ import treasuryRouter from "./treasury";
 import chainRouter from "./chain";
 import treasuryWalletRouter from "./treasury-wallet";
 import treasuryCrosschainRouter from "./treasury-crosschain";
+import treasurySwapRouter from "./treasury-swap";
 import authRouter from "./auth";
 import securityRouter from "./security";
 
@@ -19,6 +20,7 @@ router.use(authRouter);
 router.use(securityRouter);
 router.use(treasuryWalletRouter);
 router.use(treasuryCrosschainRouter);
+router.use(treasurySwapRouter);
 router.use(treasuryRouter);
 router.use(chainRouter);
 

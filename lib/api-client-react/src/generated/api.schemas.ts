@@ -503,3 +503,82 @@ export interface OperatorRoleInput {
   role: OperatorRoleInputRole;
 }
 
+export interface SwapVenueToken {
+  symbol: string;
+  address: string;
+  decimals: number;
+  /** stable | risk */
+  role: string;
+}
+
+export interface SwapVenueStatus {
+  /** Which venue was probed */
+  venue: string;
+  chainId: number;
+  network: string;
+  /** Whether venue credentials are present. Never reveals them. */
+  configured: boolean;
+  /** Whether the venue's chain and token registry could be read */
+  registryAvailable: boolean;
+  /** Whether the venue still advertises swap support on Arc Testnet */
+  arcSupportsSwaps: boolean;
+  /** True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed. */
+  swapEnabled: boolean;
+  /** Tokens Revo has approved for trading on this venue */
+  tokens: SwapVenueToken[];
+  /** Why swapping is unavailable, when it is */
+  reason?: string;
+  checkedAt: string;
+}
+
+export interface SwapQuoteInput {
+  inputSymbol: string;
+  outputSymbol: string;
+  /** Human decimal amount of the input token, for example "12.5" */
+  amount: string;
+}
+
+export interface SwapQuote {
+  inputSymbol: string;
+  outputSymbol: string;
+  /** Human amount requested, echoed back unchanged */
+  inputAmount: string;
+  /** Real base units computed by Revo from its own pinned decimals. The venue's echoed amount is deliberately not used, because Tower scales by 10^(18-decimals) rather than 10^decimals. */
+  inputBaseUnits: string;
+  /**
+     * Expected output, indicative only
+     * @nullable
+     */
+  indicativeOutput: string | null;
+  /**
+     * Venue's minimum-output floor, indicative only
+     * @nullable
+     */
+  indicativeMinOut: string | null;
+  /**
+     * Output units per input unit implied by the quote
+     * @nullable
+     */
+  impliedRate: number | null;
+  /** @nullable */
+  priceImpactPct: number | null;
+  /** @nullable */
+  feeBps: number | null;
+  /** @nullable */
+  slippageBps: number | null;
+  /** @nullable */
+  gasEstimate: string | null;
+  /** @nullable */
+  dexName: string | null;
+  /** @nullable */
+  routerAddress: string | null;
+  routePath: string[];
+  /** False whenever the route must not be signed */
+  tradable: boolean;
+  /** Why the route is not tradable */
+  reason?: string;
+  /** Non-fatal concerns an operator should see before approving */
+  warnings: string[];
+  quotedAt: string;
+}
+

@@ -709,3 +709,56 @@ export const SetOperatorRoleResponse = zod.object({
 })
 
 
+/**
+ * @summary Report whether a real on-chain swap venue is usable on Arc Testnet
+ */
+export const GetTreasurySwapVenueResponse = zod.object({
+  "venue": zod.string().describe('Which venue was probed'),
+  "chainId": zod.number(),
+  "network": zod.string(),
+  "configured": zod.boolean().describe('Whether venue credentials are present. Never reveals them.'),
+  "registryAvailable": zod.boolean().describe('Whether the venue\'s chain and token registry could be read'),
+  "arcSupportsSwaps": zod.boolean().describe('Whether the venue still advertises swap support on Arc Testnet'),
+  "swapEnabled": zod.boolean().describe('True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed.'),
+  "tokens": zod.array(zod.object({
+  "symbol": zod.string(),
+  "address": zod.string(),
+  "decimals": zod.number(),
+  "role": zod.string().describe('stable | risk')
+})).describe('Tokens Revo has approved for trading on this venue'),
+  "reason": zod.string().optional().describe('Why swapping is unavailable, when it is'),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Price a real Arc Testnet swap without executing it
+ */
+export const QuoteTreasurySwapBody = zod.object({
+  "inputSymbol": zod.string(),
+  "outputSymbol": zod.string(),
+  "amount": zod.string().describe('Human decimal amount of the input token, for example \"12.5\"')
+})
+
+export const QuoteTreasurySwapResponse = zod.object({
+  "inputSymbol": zod.string(),
+  "outputSymbol": zod.string(),
+  "inputAmount": zod.string().describe('Human amount requested, echoed back unchanged'),
+  "inputBaseUnits": zod.string().describe('Real base units computed by Revo from its own pinned decimals. The venue\'s echoed amount is deliberately not used, because Tower scales by 10^(18-decimals) rather than 10^decimals.'),
+  "indicativeOutput": zod.string().nullable().describe('Expected output, indicative only'),
+  "indicativeMinOut": zod.string().nullable().describe('Venue\'s minimum-output floor, indicative only'),
+  "impliedRate": zod.number().nullable().describe('Output units per input unit implied by the quote'),
+  "priceImpactPct": zod.number().nullable(),
+  "feeBps": zod.number().nullable(),
+  "slippageBps": zod.number().nullable(),
+  "gasEstimate": zod.string().nullable(),
+  "dexName": zod.string().nullable(),
+  "routerAddress": zod.string().nullable(),
+  "routePath": zod.array(zod.string()),
+  "tradable": zod.boolean().describe('False whenever the route must not be signed'),
+  "reason": zod.string().optional().describe('Why the route is not tradable'),
+  "warnings": zod.array(zod.string()).describe('Non-fatal concerns an operator should see before approving'),
+  "quotedAt": zod.coerce.date()
+})
+
+

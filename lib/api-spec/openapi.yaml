@@ -556,6 +556,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OperatorInfo"
+  /treasury/swap/venue:
+    get:
+      operationId: getTreasurySwapVenue
+      tags: [treasury]
+      summary: Report whether a real on-chain swap venue is usable on Arc Testnet
+      responses:
+        "200":
+          description: >-
+            Venue diagnostic. When swapping is unavailable this states the
+            actual cause rather than returning an empty success.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwapVenueStatus"
+  /treasury/swap/quote:
+    post:
+      operationId: quoteTreasurySwap
+      tags: [treasury]
+      summary: Price a real Arc Testnet swap without executing it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwapQuoteInput"
+      responses:
+        "200":
+          description: >-
+            Quote result. A route that must not be signed comes back with
+            tradable false and a reason, because an unusable route is an
+            ordinary outcome here rather than an error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwapQuote"
 components:
   schemas:
     HealthStatus:
@@ -1282,3 +1317,139 @@ components:
         role:
           type: string
           enum: [viewer, strategist, approver, guardian, admin]
+    SwapVenueToken:
+      type: object
+      required: [symbol, address, decimals, role]
+      properties:
+        symbol:
+          type: string
+        address:
+          type: string
+        decimals:
+          type: number
+        role:
+          type: string
+          description: stable | risk
+    SwapVenueStatus:
+      type: object
+      required:
+        [venue, chainId, network, configured, registryAvailable, arcSupportsSwaps, swapEnabled, tokens, checkedAt]
+      properties:
+        venue:
+          type: string
+          description: Which venue was probed
+        chainId:
+          type: number
+        network:
+          type: string
+        configured:
+          type: boolean
+          description: Whether venue credentials are present. Never reveals them.
+        registryAvailable:
+          type: boolean
+          description: Whether the venue's chain and token registry could be read
+        arcSupportsSwaps:
+          type: boolean
+          description: Whether the venue still advertises swap support on Arc Testnet
+        swapEnabled:
+          type: boolean
+          description: >-
+            True only when a real swap could actually be attempted. False means
+            quoting may still work but nothing may be signed.
+        tokens:
+          type: array
+          description: Tokens Revo has approved for trading on this venue
+          items:
+            $ref: "#/components/schemas/SwapVenueToken"
+        reason:
+          type: string
+          description: Why swapping is unavailable, when it is
+        checkedAt:
+          type: string
+          format: date-time
+    SwapQuoteInput:
+      type: object
+      required: [inputSymbol, outputSymbol, amount]
+      properties:
+        inputSymbol:
+          type: string
+        outputSymbol:
+          type: string
+        amount:
+          type: string
+          description: Human decimal amount of the input token, for example "12.5"
+    SwapQuote:
+      type: object
+      required:
+        [
+          inputSymbol,
+          outputSymbol,
+          inputAmount,
+          inputBaseUnits,
+          indicativeOutput,
+          indicativeMinOut,
+          impliedRate,
+          priceImpactPct,
+          feeBps,
+          slippageBps,
+          gasEstimate,
+          dexName,
+          routerAddress,
+          routePath,
+          tradable,
+          warnings,
+          quotedAt,
+        ]
+      properties:
+        inputSymbol:
+          type: string
+        outputSymbol:
+          type: string
+        inputAmount:
+          type: string
+          description: Human amount requested, echoed back unchanged
+        inputBaseUnits:
+          type: string
+          description: >-
+            Real base units computed by Revo from its own pinned decimals. The
+            venue's echoed amount is deliberately not used, because Tower
+            scales by 10^(18-decimals) rather than 10^decimals.
+        indicativeOutput:
+          type: ["string", "null"]
+          description: Expected output, indicative only
+        indicativeMinOut:
+          type: ["string", "null"]
+          description: Venue's minimum-output floor, indicative only
+        impliedRate:
+          type: ["number", "null"]
+          description: Output units per input unit implied by the quote
+        priceImpactPct:
+          type: ["number", "null"]
+        feeBps:
+          type: ["number", "null"]
+        slippageBps:
+          type: ["number", "null"]
+        gasEstimate:
+          type: ["string", "null"]
+        dexName:
+          type: ["string", "null"]
+        routerAddress:
+          type: ["string", "null"]
+        routePath:
+          type: array
+          items:
+            type: string
+        tradable:
+          type: boolean
+          description: False whenever the route must not be signed
+        reason:
+          type: string
+          description: Why the route is not tradable
+        warnings:
+          type: array
+          description: Non-fatal concerns an operator should see before approving
+          items:
+            type: string
+        quotedAt:
+          type: string
+          format: date-time

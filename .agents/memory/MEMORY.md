@@ -12,3 +12,4 @@
 - [Dashboard response overlays](dashboard-response-overlays.md) — the drill overlay rewrites dashboard rows; a new required response field must be added there too or the route 503s.
 - [Circle Gateway vs wallet balance](circle-gateway-vs-wallet-balance.md) — unified balance reads a deposit contract, not wallets; zero never means the treasury is empty.
 - [Custody lock test contention](custody-lock-test-contention.md) — its 2s pool deadline flakes when test files are added; isolate and re-run before calling it a regression.
+- [Tower quoting on Arc](tower-arc-quoting.md) — its amounts, fractions and risk fields each lie in a different way; a quote never authorises a trade.
