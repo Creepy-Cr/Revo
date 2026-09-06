@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Workspace scratch, not part of the product
+.agents/
+attached_assets/
+screenshots/
