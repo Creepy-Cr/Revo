@@ -17,7 +17,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { db, pool, treasuryWalletTable, type TreasuryWallet } from "@workspace/db";
 import * as dbSchema from "@workspace/db/schema";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { openCustodyKey, sealCustodyKey } from "./custody-crypto";
 import { logger } from "./logger";
 
@@ -346,6 +346,7 @@ export interface SignedTransfer {
  * pool connection. The local queue avoids occupying multiple clients while
  * requests in this process wait for the same treasury.
  */
+const CUSTODY_LOCK_NAMESPACE = "custody-withdrawal";
 const custodyQueues = new Map<string, Promise<unknown>>();
 export function withCustodyLock<T>(
   treasuryId: string,
@@ -356,17 +357,17 @@ export function withCustodyLock<T>(
     const client = await pool.connect();
     const executor = drizzle(client, { schema: dbSchema });
     try {
-      await client.query(
-        "SELECT pg_advisory_lock(hashtext('custody-withdrawal'), hashtext($1))",
-        [treasuryId],
-      );
+      await client.query("SELECT pg_advisory_lock(hashtext($1), hashtext($2))", [
+        CUSTODY_LOCK_NAMESPACE,
+        treasuryId,
+      ]);
       return await fn(executor);
     } finally {
       await client
-        .query(
-          "SELECT pg_advisory_unlock(hashtext('custody-withdrawal'), hashtext($1))",
-          [treasuryId],
-        )
+        .query("SELECT pg_advisory_unlock(hashtext($1), hashtext($2))", [
+          CUSTODY_LOCK_NAMESPACE,
+          treasuryId,
+        ])
         .catch(() => undefined);
       client.release();
     }
@@ -380,6 +381,21 @@ export function withCustodyLock<T>(
     ),
   );
   return run;
+}
+
+/**
+ * The same per-treasury custody lock withCustodyLock holds, scoped to the
+ * caller's transaction instead of a session.
+ *
+ * A transaction that must not be overtaken by a custody send takes this
+ * first. The emergency pause does: activating it therefore waits for a
+ * transfer that is already being signed or broadcast, and every send that
+ * starts after it commits reads the pause under this lock and stops. Without
+ * it the pause would only be checked when a withdrawal is reserved, and the
+ * seconds between reserving and signing would be a hole in the kill switch.
+ */
+export function custodySendLock(treasuryId: string) {
+  return sql`SELECT pg_advisory_xact_lock(hashtext(${CUSTODY_LOCK_NAMESPACE}), hashtext(${treasuryId}))`;
 }
 
 /**

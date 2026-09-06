@@ -25,4 +25,5 @@
 - [Background chain settlement](background-chain-settlement.md) — persist the tx hash before broadcast, make that write the claim, and let reconcilers only read receipts.
 - [Route concurrency tests](route-concurrency-tests.md) — queueing two requests behind the lock proves nothing; park them on a shared row and break the guard in a full run.
 - [Operating mode single source](operating-mode-single-source.md) — the mode has one home; a stored copy of it overstates what the agent may do, which is the unsafe direction.
+- [Pause binds at the send](pause-send-boundary.md) — re-read the halt under the custody lock; take that lock before the transition lock, never after.
 - [Realised fill measurement](realised-fill-measurement.md) — the receipt's transfer logs outrank the balance delta; the post-confirmation read reports or says nothing, never zero.

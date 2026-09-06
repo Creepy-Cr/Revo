@@ -43,7 +43,11 @@ import { auditSafe } from "../lib/audit";
 import { raiseAlert } from "../lib/alerts";
 import { requireOperator } from "../lib/auth";
 import { logger } from "../lib/logger";
-import { checkWithdrawalCaps, treasuryTransitionLock } from "../lib/security-controls";
+import {
+  checkWithdrawalCaps,
+  checkWithdrawalHalt,
+  treasuryTransitionLock,
+} from "../lib/security-controls";
 import { loadState, logActivity } from "../lib/state";
 
 const router: IRouter = Router();
@@ -688,8 +692,18 @@ router.post("/treasury/wallet/withdrawals", requireOperator(), async (req, res):
   // the tx may still land - the reservation stands and reconciliation
   // resolves it by the hash persisted BEFORE the broadcast.
   let signed: SignedTransfer | undefined;
+  let halted: string | undefined;
   try {
     await withCustodyLock(treasuryId, async (custodyTx) => {
+      // The emergency pause is re-read HERE, holding the custody send lock
+      // that activating a pause must also take. Phase 1's check bound this
+      // withdrawal when it reserved; between then and now the treasury may
+      // have been halted, and a reservation is not permission to send. Under
+      // this lock the two orderings are the only ones possible: the pause
+      // committed first and this transfer is refunded unsent, or this
+      // transfer is already out and the pause waits for it.
+      halted = (await checkWithdrawalHalt(custodyTx, treasuryId)) ?? undefined;
+      if (halted) return;
       signed = await signUsdcTransfer(wallet, address, microUsdc, custodyTx);
       // Persist the hash BEFORE broadcast, guarded on the row still being
       // pending: if reconciliation already refunded this reservation as
@@ -742,6 +756,25 @@ router.post("/treasury/wallet/withdrawals", requireOperator(), async (req, res):
     res.status(502).json({
       error: `${publicMessage} The withdrawal stays pending and will be reconciled automatically. Check the explorer: ${EXPLORER_URL}/tx/${signed?.hash}`,
     });
+    return;
+  }
+  if (halted) {
+    // Nothing was signed, so the reservation is definitively refundable: the
+    // units go back and the row is closed, rather than being left pending and
+    // blocking every other withdrawal for as long as the pause lasts.
+    await refundAndFail(halted);
+    await auditSafe({
+      treasuryId,
+      action: "wallet.withdrawal.request",
+      actorWallet: req.operator!.wallet,
+      actorRole: req.operator!.role,
+      sessionId: req.operator!.sessionId,
+      resourceId: pending.id,
+      result: "denied",
+      reason: halted,
+      detail: { destination: address, amountUsdc, stage: "pre-signing" },
+    });
+    res.status(409).json({ error: `${halted} The reserved units were returned to the treasury.` });
     return;
   }
   if (!signed) {

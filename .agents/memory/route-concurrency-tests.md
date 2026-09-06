@@ -32,3 +32,10 @@ decorative unless the overlap is forced.
   lazily-inserted rows, so the filtered run serialises on the insert and
   passes with the guard removed - the exact false negative this note exists
   to prevent.
+- Check nothing earlier in the same request answers first. The withdrawal
+  route refuses outright while any withdrawal of that treasury is still
+  pending, and that check precedes the caps, so two concurrent requests are
+  separated by it and never by a cap - a route-level cap race is decorative.
+  Drive the reservation transaction itself (lock, cap check, insert) for that
+  contention, and race the route only against a competitor that commits as
+  already-resolved, which the earlier check ignores.
