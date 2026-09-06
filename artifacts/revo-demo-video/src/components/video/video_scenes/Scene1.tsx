@@ -47,7 +47,7 @@ export function Scene1() {
         >
           <div className="bg-[#050505] border border-white/10 rounded-xl p-8 shadow-2xl">
             <h3 className="text-sm font-mono tracking-[0.1em] text-muted-foreground uppercase flex items-center gap-2 mb-6">
-              <span className="text-white/40">SYS //</span> COMMAND PROMPT
+              <span className="text-white/40">SYS //</span> CONSOLE
             </h3>
 
             <div className="relative group mb-8">

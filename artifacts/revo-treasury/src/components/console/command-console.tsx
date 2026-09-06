@@ -51,7 +51,7 @@ export function CommandConsole() {
   return (
     <div className="flex flex-col">
       <h3 className="text-[10px] font-mono tracking-[0.1em] text-muted-foreground uppercase flex items-center gap-2 mb-4 shrink-0">
-        <span className="text-white/40">SYS //</span> COMMAND PROMPT
+        <span className="text-white/40">SYS //</span> CONSOLE
       </h3>
       <form onSubmit={handleSubmit} className="relative group">
         <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
