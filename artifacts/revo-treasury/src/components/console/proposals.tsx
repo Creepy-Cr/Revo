@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useListTreasuryProposals, useApproveTreasuryProposal, useRejectTreasuryProposal, getListTreasuryProposalsQueryKey, getGetTreasuryDashboardQueryKey } from '@workspace/api-client-react';
-import { Check, X, ShieldAlert, ExternalLink } from 'lucide-react';
+import { Check, X, ShieldAlert, ExternalLink, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from './auth-context';
 import { RejectDialog } from './reject-dialog';
@@ -9,7 +9,15 @@ import { apiErrorMessage } from '@/lib/api-error';
 
 export function Proposals() {
   const { data: proposals, isLoading } = useListTreasuryProposals({
-    query: { queryKey: getListTreasuryProposalsQueryKey(), refetchInterval: 5000 }
+    query: {
+      queryKey: getListTreasuryProposalsQueryKey(),
+      // Approving no longer waits for the swap, so the settling proposal is
+      // watched here instead. While one is in flight the operator is looking
+      // at money moving, so the panel checks more often; the rest of the time
+      // it goes back to the console's usual cadence.
+      refetchInterval: (query: any) =>
+        query.state.data?.some((p: any) => p.status === 'approved') ? 2000 : 5000,
+    }
   });
   const approve = useApproveTreasuryProposal();
   const reject = useRejectTreasuryProposal();
@@ -24,25 +32,55 @@ export function Proposals() {
     queryClient.invalidateQueries({ queryKey: getGetTreasuryDashboardQueryKey() });
   };
 
+  // A settlement finishes after its request did, so the outcome arrives on a
+  // poll rather than in a response. Watching proposals leave "approved" is
+  // what turns that into a told outcome and fresh holdings, with no manual
+  // refresh: until the swap resolves, the dashboard's numbers are pre-trade.
+  const settlingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!proposals) return;
+    const settling = new Set(proposals.filter(p => p.status === 'approved').map(p => p.id));
+    for (const id of settlingRef.current) {
+      if (settling.has(id)) continue;
+      const resolved = proposals.find(p => p.id === id);
+      queryClient.invalidateQueries({ queryKey: getGetTreasuryDashboardQueryKey() });
+      if (resolved?.status === 'executed') {
+        toast({
+          title: 'Rebalance settled on Arc',
+          description: resolved.executionTxHash
+            ? `Swap confirmed. Transaction ${resolved.executionTxHash.slice(0, 10)}…`
+            : 'No swap was needed: holdings already match the approved target.',
+        });
+      } else if (resolved?.status === 'pending') {
+        toast({
+          title: 'Rebalance did not settle',
+          description: 'No holdings moved. The proposal is actionable again.',
+          variant: 'destructive',
+        });
+      }
+    }
+    settlingRef.current = settling;
+  }, [proposals, queryClient, toast]);
+
   const handleApprove = (id: string) => {
     if (!session) {
       toast({ title: 'Sign in to act', variant: 'destructive' });
       return;
     }
     approve.mutate({ proposalId: id }, {
-      onSuccess: (proposal) => {
+      // The response confirms the decision was recorded, not that the swap
+      // landed: settlement runs on the server after this returns.
+      onSuccess: () => {
         toast({
-          title: proposal.executionTxHash ? 'Rebalance settled on Arc' : 'Rebalance approved',
-          description: proposal.executionTxHash
-            ? `Swap confirmed. Transaction ${proposal.executionTxHash.slice(0, 10)}…`
-            : 'No swap was needed: holdings already match the approved target.',
+          title: 'Approval recorded',
+          description: 'Settling the swap on Arc. This panel updates itself when it confirms.',
         });
         invalidate();
       },
-      // A failed settlement returns the proposal to pending, so the feed and
-      // the buttons have to refresh either way - the operator can act again.
+      // A rejected claim (already decided, policy no longer active) leaves the
+      // proposal alone, so refresh either way and let the operator see why.
       onError: (err) => {
-        toast({ title: 'Rebalance did not settle', description: apiErrorMessage(err), variant: 'destructive' });
+        toast({ title: 'Approval not recorded', description: apiErrorMessage(err), variant: 'destructive' });
         invalidate();
       }
     });
@@ -121,8 +159,12 @@ export function Proposals() {
                 <div className="text-sm text-muted-foreground mb-6 leading-relaxed">{p.summary}</div>
 
                 {isApproved && (
-                  <div className="mb-6 border-l-2 border-cyan-400/40 bg-cyan-400/[0.04] px-3 py-2 text-[11px] leading-relaxed text-white/50">
-                    Approved, but the swap has not confirmed on Arc. Holdings have not moved yet.
+                  <div className="mb-6 flex items-start gap-2 border-l-2 border-cyan-400/40 bg-cyan-400/[0.04] px-3 py-2 text-[11px] leading-relaxed text-white/50">
+                    <Loader2 className="mt-[2px] h-3 w-3 shrink-0 animate-spin text-cyan-400/70" />
+                    <span>
+                      Settling on Arc. The swap has not confirmed, so holdings have not moved yet.
+                      This updates itself when it resolves.
+                    </span>
                   </div>
                 )}
 
@@ -148,14 +190,15 @@ export function Proposals() {
                   </div>
                 )}
 
-                {isExec && p.explorerTxUrl && (
+                {(isExec || isApproved) && p.explorerTxUrl && (
                   <a
                     href={p.explorerTxUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="mb-2 inline-flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-[0.1em] text-green-400/70 transition-colors hover:text-green-400"
+                    className={`mb-2 inline-flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${isExec ? 'text-green-400/70 hover:text-green-400' : 'text-cyan-400/70 hover:text-cyan-400'}`}
                   >
-                    <ExternalLink className="h-3 w-3" /> Settlement tx {p.executionTxHash?.slice(0, 10)}…
+                    <ExternalLink className="h-3 w-3" />
+                    {isExec ? 'Settlement tx' : 'Broadcast tx'} {p.executionTxHash?.slice(0, 10)}…
                   </a>
                 )}
 

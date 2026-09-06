@@ -22,9 +22,11 @@ export const treasuryProposalsTable = pgTable("treasury_proposals", {
   /** Structured allocation targets the approved rebalance settles towards. */
   targetAllocations: jsonb("target_allocations").$type<AllocationTarget[]>(),
   /**
-   * Arc Testnet hash of the swap that settled this rebalance. Written only
-   * once a transaction has been broadcast, so `executed` without a hash is
-   * impossible for any proposal that carried allocation targets.
+   * Arc Testnet hash of the swap settling this rebalance. Written immediately
+   * BEFORE the swap is broadcast, so `executed` without a hash is impossible
+   * for any proposal that carried allocation targets, and an `approved`
+   * proposal with no hash proves nothing was ever sent - which is what lets
+   * reconciliation recover an interrupted settlement without re-sending it.
    */
   executionTxHash: text("execution_tx_hash"),
   decidedAt: timestamp("decided_at", { withTimezone: true }),

@@ -149,7 +149,7 @@ export const ListTreasuryProposalsResponseItem = zod.object({
   "symbol": zod.string(),
   "percentage": zod.number()
 })).nullish(),
-  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read \"executed\" without one.'),
+  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap settling this rebalance. Written immediately before the swap is broadcast, so a proposal with allocation targets can never read \"executed\" without one, and an \"approved\" proposal with no hash means no swap was ever sent.'),
   "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for executionTxHash, when there is one.'),
   "decidedAt": zod.string().nullish()
 })
@@ -286,8 +286,8 @@ export const RejectTreasuryPolicyResponse = zod.object({
 
 
 /**
- * Sizes the swap against the custody wallet's live balances, quotes it on Synthra, simulates it with eth_call, and only then signs and broadcasts it. The proposal returns "executed" only after that swap confirms, with executionTxHash set. A quote that is not tradable, a simulation revert, or a reverted swap returns 502 and leaves the proposal actionable.
- * @summary Approve a proposal; settles the rebalance as a real swap on Arc
+ * Returns as soon as the proposal is claimed, with status "approved". Settling the rebalance is a chain round trip - sizing the swap against the custody wallet's live balances, quoting it on Synthra, simulating it with eth_call, then signing, broadcasting and confirming - which has no upper bound under Arc congestion, so it is NOT awaited here. Poll the proposal for the outcome: "executed" with executionTxHash means the swap confirmed, and a return to "pending" means nothing moved and the proposal is actionable again. A proposal that stays "approved" is still settling or awaiting reconciliation; it is never re-offered for approval, so the same rebalance cannot be sent twice.
+ * @summary Approve a proposal; the rebalance then settles on Arc in the background
  */
 export const ApproveTreasuryProposalParams = zod.object({
   "proposalId": zod.coerce.string()
@@ -307,7 +307,7 @@ export const ApproveTreasuryProposalResponse = zod.object({
   "symbol": zod.string(),
   "percentage": zod.number()
 })).nullish(),
-  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read \"executed\" without one.'),
+  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap settling this rebalance. Written immediately before the swap is broadcast, so a proposal with allocation targets can never read \"executed\" without one, and an \"approved\" proposal with no hash means no swap was ever sent.'),
   "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for executionTxHash, when there is one.'),
   "decidedAt": zod.string().nullish()
 })
@@ -342,7 +342,7 @@ export const RejectTreasuryProposalResponse = zod.object({
   "symbol": zod.string(),
   "percentage": zod.number()
 })).nullish(),
-  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read \"executed\" without one.'),
+  "executionTxHash": zod.string().nullish().describe('Arc Testnet hash of the swap settling this rebalance. Written immediately before the swap is broadcast, so a proposal with allocation targets can never read \"executed\" without one, and an \"approved\" proposal with no hash means no swap was ever sent.'),
   "explorerTxUrl": zod.string().nullish().describe('Block-explorer link for executionTxHash, when there is one.'),
   "decidedAt": zod.string().nullish()
 })

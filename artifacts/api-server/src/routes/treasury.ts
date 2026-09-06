@@ -43,11 +43,11 @@ import { auditSafe } from "../lib/audit";
 import { FRESH_AUTH_MS, requireOperator } from "../lib/auth";
 import { getSecurityControls, treasuryTransitionLock } from "../lib/security-controls";
 import { llmGuard } from "../lib/llm-guard";
-import { getMarketQuote, type MarketQuote } from "../lib/market";
+import { getMarketQuote } from "../lib/market";
 import { buildRebalancePlan, normalizeRules } from "../lib/policy-engine";
 import { buildSignals } from "../lib/signals";
 import { applyRebalance, computeDashboard, loadState, logActivity } from "../lib/state";
-import { settleRebalance } from "../lib/rebalance-execution";
+import { startProposalSettlement } from "../lib/rebalance-settlement";
 import { EXPLORER_URL } from "../lib/arc-chain";
 
 const router: IRouter = Router();
@@ -159,139 +159,6 @@ function serializeProposal(proposal: TreasuryProposal) {
     explorerTxUrl: proposal.executionTxHash
       ? `${EXPLORER_URL}/tx/${proposal.executionTxHash}`
       : null,
-  };
-}
-
-/**
- * Drives an approved proposal to its real terminal state by settling the
- * rebalance on Arc.
- *
- * The status transitions are the honest part of this function. An approval
- * only claims the proposal ("approved"); nothing here writes "executed" until
- * a swap has confirmed on chain, and every status write is guarded on the row
- * still being "approved" so an emergency reject or supersession that lands
- * mid-settlement is never clobbered.
- *
- * Three outcomes, three different obligations:
- *   - settled / nothing-to-do: the target is genuinely reached, so "executed".
- *   - refused: no value moved, so the proposal goes back to "pending" and the
- *     operator can act on it again.
- *   - uncertain: a signed swap may still land, so it stays "approved". Handing
- *     it back for a second approval could double the trade.
- */
-async function settleApprovedProposal(
-  treasuryId: string,
-  proposal: TreasuryProposal,
-  quote: MarketQuote | null,
-): Promise<
-  | { kind: "executed"; proposal: TreasuryProposal }
-  | { kind: "unsettled"; proposal: TreasuryProposal; error: string }
-> {
-  const claimed = (updated: TreasuryProposal | undefined) => updated ?? proposal;
-
-  const finish = async (txHash: string | null): Promise<TreasuryProposal> => {
-    const [updated] = await db
-      .update(treasuryProposalsTable)
-      .set({ status: "executed", decidedAt: new Date(), executionTxHash: txHash })
-      .where(
-        and(
-          eq(treasuryProposalsTable.id, proposal.id),
-          eq(treasuryProposalsTable.treasuryId, treasuryId),
-          eq(treasuryProposalsTable.status, "approved"),
-        ),
-      )
-      .returning();
-    return claimed(updated);
-  };
-
-  const returnToOperator = async (txHash: string | null): Promise<TreasuryProposal> => {
-    const [updated] = await db
-      .update(treasuryProposalsTable)
-      .set({ status: "pending", decidedAt: null, executionTxHash: txHash })
-      .where(
-        and(
-          eq(treasuryProposalsTable.id, proposal.id),
-          eq(treasuryProposalsTable.treasuryId, treasuryId),
-          eq(treasuryProposalsTable.status, "approved"),
-        ),
-      )
-      .returning();
-    return claimed(updated);
-  };
-
-  const targets = proposal.targetAllocations;
-  if (!targets || targets.length === 0) {
-    await logActivity(
-      treasuryId,
-      `Proposal "${proposal.title}" approved`,
-      "Approved with no allocation targets attached, so no swap was required and no holdings moved.",
-      "executed",
-      "system",
-    );
-    return { kind: "executed", proposal: await finish(null) };
-  }
-
-  const outcome = await settleRebalance(treasuryId, targets, quote);
-
-  if (outcome.kind === "settled") {
-    const { settlement } = outcome;
-    await logActivity(
-      treasuryId,
-      "Rebalance settled on Arc",
-      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} for ${settlement.expectedOutput} ${settlement.outputSymbol} on Synthra (${settlement.feeTier / 10_000}% tier), with a floor of ${settlement.minOutput} ${settlement.outputSymbol}. Target: ${proposal.action}.`,
-      "executed",
-      "onchain",
-      settlement.txHash,
-    );
-    return { kind: "executed", proposal: await finish(settlement.txHash) };
-  }
-
-  if (outcome.kind === "nothing-to-do") {
-    await logActivity(
-      treasuryId,
-      "Rebalance needed no swap",
-      `${outcome.reason} Target: ${proposal.action}.`,
-      "executed",
-      "system",
-    );
-    return { kind: "executed", proposal: await finish(null) };
-  }
-
-  if (outcome.kind === "uncertain") {
-    await logActivity(
-      treasuryId,
-      "Rebalance swap outcome unresolved",
-      `${outcome.reason} The proposal stays approved, not executed, until the transaction is confirmed. It will not be offered for approval again.`,
-      "failed",
-      outcome.txHash ? "onchain" : "system",
-      outcome.txHash ?? null,
-    );
-    const [updated] = await db
-      .update(treasuryProposalsTable)
-      .set({ executionTxHash: outcome.txHash ?? null })
-      .where(
-        and(
-          eq(treasuryProposalsTable.id, proposal.id),
-          eq(treasuryProposalsTable.treasuryId, treasuryId),
-          eq(treasuryProposalsTable.status, "approved"),
-        ),
-      )
-      .returning();
-    return { kind: "unsettled", proposal: claimed(updated), error: outcome.reason };
-  }
-
-  await logActivity(
-    treasuryId,
-    "Rebalance did not settle",
-    `${outcome.reason} No holdings moved, so the proposal is actionable again.`,
-    "failed",
-    outcome.txHash ? "onchain" : "system",
-    outcome.txHash ?? null,
-  );
-  return {
-    kind: "unsettled",
-    proposal: await returnToOperator(outcome.txHash ?? null),
-    error: outcome.reason,
   };
 }
 
@@ -975,17 +842,12 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
   }
 
   // The policy IS activated at this point and the response says so either
-  // way. An auto-approved rebalance that fails to settle drops back to
-  // "pending" for an operator, rather than reporting a trade that never
-  // happened, so a settlement failure must not fail the activation.
+  // way. Settlement runs in the background: an auto-approved rebalance that
+  // fails to settle drops back to "pending" for an operator, rather than
+  // reporting a trade that never happened, and a chain round trip must not
+  // hold this response open behind an activation that has already committed.
   if (autonomous && proposal) {
-    const settled = await settleApprovedProposal(treasuryId, proposal, quote);
-    if (settled.kind === "unsettled") {
-      req.log.warn(
-        { policyId: activated.id, proposalId, reason: settled.error },
-        "Auto-approved rebalance did not settle on Arc",
-      );
-    }
+    startProposalSettlement(treasuryId, proposal, quote);
   }
 
   if (proposalId) {
@@ -1074,7 +936,12 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
   // holding a database transaction and the transition lock open across it
   // would stall every other treasury operation for the duration. So the
   // proposal is claimed here (which makes it non-actionable and stops a
-  // second approval) and settled below, outside the lock.
+  // second approval) and settled in the background, outside the lock and
+  // outside this request.
+  //
+  // Any hash from a previous failed attempt is cleared as part of the claim,
+  // so an "approved" proposal's hash always names the swap of the attempt
+  // that is running now - which is exactly what reconciliation reads.
   const quote = await getMarketQuote();
   let result;
   try {
@@ -1089,7 +956,7 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
 
       const [approved] = await tx
         .update(treasuryProposalsTable)
-        .set({ status: "approved", decidedAt: new Date() })
+        .set({ status: "approved", decidedAt: new Date(), executionTxHash: null })
         .where(
           and(
             eq(treasuryProposalsTable.id, proposalId),
@@ -1158,10 +1025,13 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
 
   const { approved } = result;
 
-  // Settlement runs outside the lock. Until it confirms, the proposal reads
-  // "approved" - an operator polling mid-flight sees an accepted decision,
-  // not a completed trade.
-  const settled = await settleApprovedProposal(treasuryId, approved, quote);
+  // The decision is durable now, so the operator is answered now. Settlement
+  // is a chain round trip with no upper bound under Arc congestion; waiting
+  // on it here would hand the operator a timed-out request while money is
+  // genuinely moving. The proposal reads "approved" until its swap confirms,
+  // the console watches it, and reconciliation resolves it if this process
+  // does not survive the attempt.
+  startProposalSettlement(treasuryId, approved, quote);
 
   await auditSafe({
     action: "proposal.approve",
@@ -1170,28 +1040,12 @@ router.post("/treasury/proposals/:proposalId/approve", requireOperator(["approve
     sessionId: req.operator!.sessionId,
     treasuryId,
     resourceId: proposalId,
-    result: settled.kind === "executed" ? "ok" : "failed",
-    ...(settled.kind === "unsettled" ? { reason: settled.error } : {}),
-    detail: {
-      status: settled.proposal.status,
-      txHash: settled.proposal.executionTxHash,
-    },
+    result: "ok",
+    detail: { status: approved.status, settling: true },
   });
 
-  if (settled.kind === "unsettled") {
-    req.log.warn(
-      { proposalId, status: settled.proposal.status, reason: settled.error },
-      "Approved rebalance did not settle on Arc",
-    );
-    res.status(502).json({ error: settled.error });
-    return;
-  }
-
-  req.log.info(
-    { proposalId, txHash: settled.proposal.executionTxHash },
-    "Proposal approved and rebalance settled on Arc",
-  );
-  res.json(ApproveTreasuryProposalResponse.parse(serializeProposal(settled.proposal)));
+  req.log.info({ proposalId }, "Proposal approved; rebalance settling on Arc");
+  res.json(ApproveTreasuryProposalResponse.parse(serializeProposal(approved)));
 });
 
 router.post("/treasury/proposals/:proposalId/reject", requireOperator(["approver"]), async (req, res): Promise<void> => {

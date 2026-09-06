@@ -25,6 +25,11 @@
  * actionable. "uncertain" means a signed swap may still land, so the caller
  * must NOT hand the proposal back for a second approval. Collapsing those two
  * into one error would either strand a real trade or invite a double spend.
+ *
+ * Because settlement outlives the request that started it, the caller can
+ * pass a `SwapBroadcastClaim`: it records the swap hash before the mempool
+ * sees it and can veto the send, which is what makes an interrupted
+ * settlement recoverable by a reconciler without re-sending anything.
  */
 
 import type { Address, Hex } from "viem";
@@ -42,6 +47,7 @@ import {
   signCustodyCall,
   simulateCustodyCall,
   withCustodyLock,
+  type CustodyTransaction,
 } from "./arc-chain";
 import { ARC_TOKENS, type ArcToken } from "./arc-tokens";
 import { readCustodyHoldings, type Holding } from "./holdings";
@@ -115,6 +121,26 @@ export type RebalanceOutcome =
   | { kind: "refused"; reason: string; txHash?: string }
   /** A signed swap may still land. The proposal must NOT be re-offered. */
   | { kind: "uncertain"; reason: string; txHash?: string };
+
+/**
+ * Last gate before the swap reaches the mempool.
+ *
+ * Called with the swap's deterministic hash after signing and immediately
+ * BEFORE broadcast, on the custody lock's own database client so the caller's
+ * write is durable before anything can land. That ordering is what lets a
+ * reconciler read a settlement it did not start: a claim recorded with no
+ * hash proves no swap was ever sent, so it can be recovered without risking a
+ * second trade.
+ *
+ * Returning false means the caller no longer owns this settlement - something
+ * else resolved the proposal while the swap was being prepared - and the
+ * signed payload is discarded unsent. Nothing was broadcast, so no nonce is
+ * consumed and the treasury's position is untouched.
+ */
+export type SwapBroadcastClaim = (
+  hash: Hex,
+  executor: CustodyTransaction,
+) => Promise<boolean>;
 
 /** One direction of trade, already sized against real spendable balance. */
 interface SwapLeg {
@@ -319,6 +345,7 @@ export async function settleRebalance(
   treasuryId: string,
   targets: AllocationTarget[],
   marketQuote: MarketQuote | null,
+  claimBroadcast?: SwapBroadcastClaim,
 ): Promise<RebalanceOutcome> {
   let plan: PlanResult;
   try {
@@ -368,6 +395,7 @@ export async function settleRebalance(
 
   let approvalTxHash: Hex | undefined;
   let swapHash: Hex | undefined;
+  let claimLost = false;
 
   try {
     // Signing reads the pending nonce from the chain, so the approval and the
@@ -401,6 +429,12 @@ export async function settleRebalance(
       await simulateCustodyCall(wallet.address, SYNTHRA_ROUTER, swapData);
 
       const signedSwap = await signCustodyCall(wallet, SYNTHRA_ROUTER, swapData, custodyTx);
+      if (claimBroadcast && !(await claimBroadcast(signedSwap.hash, custodyTx))) {
+        // The caller's claim is gone, so this swap must not reach the
+        // mempool: the signed payload is dropped with no nonce consumed.
+        claimLost = true;
+        return;
+      }
       swapHash = signedSwap.hash;
       await broadcastSignedTransfer(signedSwap);
     });
@@ -421,6 +455,14 @@ export async function settleRebalance(
       "Rebalance swap did not settle",
     );
     return outcome;
+  }
+
+  if (claimLost) {
+    return {
+      kind: "refused",
+      reason:
+        "The rebalance was no longer awaiting settlement when its swap was ready, so the signed swap was discarded unsent and no holdings moved.",
+    };
   }
 
   if (!swapHash) {

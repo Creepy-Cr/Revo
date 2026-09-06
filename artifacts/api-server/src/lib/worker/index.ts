@@ -5,6 +5,7 @@ import { logger } from "../logger";
 import { FOUNDING_TREASURY_ID } from "../auth";
 import { depositIndexerJob } from "./deposit-indexer";
 import { drawdownMonitorJob } from "./drawdown-monitor";
+import { rebalanceReconcilerJob } from "./rebalance-reconciler";
 import { withdrawalReconcilerJob } from "./withdrawal-reconciler";
 
 /**
@@ -35,7 +36,12 @@ const LEASE_ID = "main-worker";
 const LEASE_TTL_MS = 45_000;
 const TICK_MS = 15_000;
 
-const JOBS: WorkerJob[] = [withdrawalReconcilerJob, depositIndexerJob, drawdownMonitorJob];
+const JOBS: WorkerJob[] = [
+  withdrawalReconcilerJob,
+  rebalanceReconcilerJob,
+  depositIndexerJob,
+  drawdownMonitorJob,
+];
 
 const instanceId = randomUUID();
 let timer: NodeJS.Timeout | null = null;

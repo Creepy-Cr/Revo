@@ -35,7 +35,7 @@ Revo is a testnet-only DAO treasury command center for wallet-authenticated oper
 - Wallet signatures establish server-side, HttpOnly sessions; every protected query is scoped to the operator's treasury.
 - Claude compiles and explains policies, but deterministic server code applies governance and guardrails.
 - Arc Testnet deposits, withdrawals, and approved rebalances are real testnet transactions. Only the risk drill remains explicitly simulated.
-- An approved rebalance is settled as a real Synthra swap: sized from live custody balances, quoted, simulated with `eth_call`, then signed. It reaches `executed` only after that swap confirms.
+- An approved rebalance is settled as a real Synthra swap: sized from live custody balances, quoted, simulated with `eth_call`, then signed. It reaches `executed` only after that swap confirms. Approval returns as soon as the proposal is claimed; the swap settles in the background and a reconciler worker resolves anything left at `approved`.
 - Production requires a custody secret distinct from the session-signing secret.
 
 ## Product

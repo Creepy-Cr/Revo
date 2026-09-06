@@ -195,7 +195,7 @@ export interface TreasuryProposal {
   /** @nullable */
   targetAllocations?: AllocationTarget[] | null;
   /**
-     * Arc Testnet hash of the swap that settled this rebalance. Written only once a transaction has been broadcast, so a proposal with allocation targets can never read "executed" without one.
+     * Arc Testnet hash of the swap settling this rebalance. Written immediately before the swap is broadcast, so a proposal with allocation targets can never read "executed" without one, and an "approved" proposal with no hash means no swap was ever sent.
      * @nullable
      */
   executionTxHash?: string | null;

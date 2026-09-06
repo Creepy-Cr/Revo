@@ -352,6 +352,41 @@ describe("settleRebalance", () => {
     expect(signCustodyCall).not.toHaveBeenCalled();
   });
 
+  it("hands the swap hash to the caller before broadcasting it", async () => {
+    const order: string[] = [];
+    broadcastSignedTransfer.mockImplementation(async () => void order.push("broadcast"));
+    const claim = vi.fn(async (hash: string) => {
+      order.push(`claim:${hash}`);
+      return true;
+    });
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE, claim);
+
+    expect(outcome.kind).toBe("settled");
+    // Only the swap is claimed; the allowance approval moves nothing and is
+    // not the transaction a reconciler would need to find.
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(claim).toHaveBeenCalledWith(HASHES[1], expect.anything());
+    // The hash is durable before the mempool can see the transaction.
+    expect(order).toEqual(["broadcast", `claim:${HASHES[1]}`, "broadcast"]);
+  });
+
+  it("discards the signed swap unsent when the caller refuses the broadcast", async () => {
+    const claim = vi.fn(async () => false);
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE, claim);
+
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") return;
+    expect(outcome.reason).toContain("discarded unsent");
+    // No hash to chase, because the swap never left this process.
+    expect(outcome.txHash).toBeUndefined();
+    // The allowance approval was broadcast; the swap was not.
+    expect(broadcastSignedTransfer).toHaveBeenCalledTimes(1);
+    expect(confirmTransfer).toHaveBeenCalledTimes(1);
+    expect(confirmTransfer).not.toHaveBeenCalledWith(HASHES[1]);
+  });
+
   it("never routes the untradable leg, even when it is the furthest from target", async () => {
     readCustodyHoldings.mockResolvedValue(holdings(1000, 0));
 

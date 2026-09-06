@@ -197,13 +197,18 @@ paths:
     post:
       operationId: approveTreasuryProposal
       tags: [treasury]
-      summary: Approve a proposal; settles the rebalance as a real swap on Arc
+      summary: Approve a proposal; the rebalance then settles on Arc in the background
       description: >-
-        Sizes the swap against the custody wallet's live balances, quotes it on
-        Synthra, simulates it with eth_call, and only then signs and broadcasts
-        it. The proposal returns "executed" only after that swap confirms, with
-        executionTxHash set. A quote that is not tradable, a simulation revert,
-        or a reverted swap returns 502 and leaves the proposal actionable.
+        Returns as soon as the proposal is claimed, with status "approved".
+        Settling the rebalance is a chain round trip - sizing the swap against
+        the custody wallet's live balances, quoting it on Synthra, simulating
+        it with eth_call, then signing, broadcasting and confirming - which has
+        no upper bound under Arc congestion, so it is NOT awaited here. Poll
+        the proposal for the outcome: "executed" with executionTxHash means the
+        swap confirmed, and a return to "pending" means nothing moved and the
+        proposal is actionable again. A proposal that stays "approved" is still
+        settling or awaiting reconciliation; it is never re-offered for
+        approval, so the same rebalance cannot be sent twice.
       parameters:
         - name: proposalId
           in: path
@@ -212,16 +217,13 @@ paths:
             type: string
       responses:
         "200":
-          description: The rebalance swap confirmed on Arc; the proposal is executed
+          description: >-
+            The proposal is claimed and its rebalance is settling. No swap has
+            confirmed yet.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TreasuryProposal"
-        "502":
-          description: >-
-            The swap did not settle. The proposal is returned to "pending" when
-            nothing moved, or held at "approved" when a broadcast swap's outcome
-            could not be observed.
   /treasury/proposals/{proposalId}/reject:
     post:
       operationId: rejectTreasuryProposal
@@ -936,9 +938,10 @@ components:
         executionTxHash:
           type: ["string", "null"]
           description: >-
-            Arc Testnet hash of the swap that settled this rebalance. Written
-            only once a transaction has been broadcast, so a proposal with
-            allocation targets can never read "executed" without one.
+            Arc Testnet hash of the swap settling this rebalance. Written
+            immediately before the swap is broadcast, so a proposal with
+            allocation targets can never read "executed" without one, and an
+            "approved" proposal with no hash means no swap was ever sent.
         explorerTxUrl:
           type: ["string", "null"]
           description: Block-explorer link for executionTxHash, when there is one.
