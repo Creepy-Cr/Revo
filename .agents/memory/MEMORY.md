@@ -27,3 +27,4 @@
 - [Operating mode single source](operating-mode-single-source.md) — the mode has one home; a stored copy of it overstates what the agent may do, which is the unsafe direction.
 - [Pause binds at the send](pause-send-boundary.md) — re-read the halt under the custody lock; take that lock before the transition lock, never after.
 - [Realised fill measurement](realised-fill-measurement.md) — the receipt's transfer logs outrank the balance delta; the post-confirmation read reports or says nothing, never zero.
+- [Console refusal signposts](console-refusal-signposts.md) — mirror a route's refusal in the control, off the shared query key; the UI signposts, the server still enforces.
