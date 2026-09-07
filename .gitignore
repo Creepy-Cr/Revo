@@ -52,3 +52,11 @@ Thumbs.db
 .agents/
 attached_assets/
 screenshots/
+
+# Replit workspace configuration, kept out of the public repo.
+# These files stay on disk and the project keeps running; they are simply
+# not published. Re-add them if you ever want a one-click Replit clone.
+.replit
+.replitignore
+replit.md
+**/.replit-artifact/
