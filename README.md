@@ -340,3 +340,20 @@ local setup, conventions and the areas that need extra care. Please follow the
 ## Licence
 
 [MIT](./LICENSE) © 2026 Revo Labs. Built on Arc.
+
+---
+
+<p align="center">
+  <a href="https://x.com/Cr3ePy_007"><img alt="Built by @Cr3ePy_007" src="https://img.shields.io/badge/Built%20by-%40Cr3ePy__007-000000?style=flat-square&logo=x&logoColor=white" /></a>
+  <a href="https://x.com/RevoLabsHQ"><img alt="Follow Revo on X" src="https://img.shields.io/badge/Revo-%40RevoLabsHQ-000000?style=flat-square&logo=x&logoColor=white" /></a>
+  <a href="https://arc.network"><img alt="Built on Arc" src="https://img.shields.io/badge/Built%20on-Arc-FC3B00?style=flat-square" /></a>
+</p>
+
+<p align="center">
+  <sub>
+    Built by <a href="https://x.com/Cr3ePy_007"><strong>@Cr3ePy_007</strong></a>
+    &nbsp;·&nbsp; Follow Revo on <a href="https://x.com/RevoLabsHQ"><strong>@RevoLabsHQ</strong></a>
+    &nbsp;·&nbsp; Questions and feedback are welcome in
+    <a href="https://github.com/Creepy-Cr/Revo/issues">issues</a>
+  </sub>
+</p>
