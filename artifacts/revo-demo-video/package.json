@@ -1,6 +1,7 @@
 {
   "name": "@workspace/revo-demo-video",
   "version": "0.0.0",
+  "description": "Revo Treasury product demo video, rendered from React",
   "private": true,
   "type": "module",
   "scripts": {

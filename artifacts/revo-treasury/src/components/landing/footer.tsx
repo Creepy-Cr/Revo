@@ -22,7 +22,7 @@ export function Footer() {
               <span className="font-display font-semibold text-xl tracking-tight text-white">Revo</span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mb-8">
-              A testnet treasury command center for autonomous DAOs. Deposits and withdrawals settle on Arc Testnet; strategy rebalances are simulated accounting under hard guardrails.
+              A testnet treasury command center for autonomous DAOs. Deposits, withdrawals and approved rebalances settle on Arc Testnet under hard guardrails.
             </p>
             <div className="inline-flex items-center gap-2 text-[10px] font-mono text-white/40 tracking-[0.15em] uppercase tabular-nums border border-white/10 px-3 py-1.5 rounded-sm">
               <span className="w-1 h-1 bg-green-400" />

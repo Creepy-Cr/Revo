@@ -8,11 +8,11 @@ export function HowItWorks() {
     },
     {
       title: "Compile & Validate",
-      description: "Arcus compiles the intent into an enforced policy. A deterministic engine — not the model — then drafts the rebalance and clamps it against your DAO's guardrails."
+      description: "Arcus compiles the intent into an enforced policy. A deterministic engine, not the model, then drafts the rebalance and clamps it against your DAO's guardrails."
     },
     {
       title: "Queue Proposal",
-      description: "In Managed mode every proposal waits for human approval; in Autonomous mode Revo acts only inside the active policy. Approving moves the simulated allocation — only deposits and withdrawals touch the chain."
+      description: "In Managed mode every proposal waits for human approval; in Autonomous mode Revo acts only inside the active policy. Approving settles the rebalance as a real swap on Arc Testnet, confirmed from the receipt."
     }
   ];
 

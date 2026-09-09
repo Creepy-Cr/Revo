@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/Creepy-Cr/Revo/security/advisories/new
+    about: Please report vulnerabilities privately. Do not open a public issue.
+  - name: Product docs
+    url: https://therevo.xyz/docs
+    about: How the console, policies, modes and settlement work.

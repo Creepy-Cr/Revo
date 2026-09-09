@@ -1,6 +1,7 @@
 {
   "name": "@workspace/db",
   "version": "0.0.0",
+  "description": "Drizzle ORM schema and PostgreSQL connection for Revo",
   "private": true,
   "type": "module",
   "exports": {

@@ -1,6 +1,7 @@
 {
   "name": "@workspace/revo-treasury",
   "version": "0.0.0",
+  "description": "Revo Treasury web app: marketing site, docs and the operator console (React + Vite)",
   "private": true,
   "type": "module",
   "scripts": {

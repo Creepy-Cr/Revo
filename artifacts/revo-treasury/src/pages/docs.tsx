@@ -111,7 +111,7 @@ const sections: DocSection[] = [
         <DocList
           items={[
             <>Approve/reject actions are atomic: concurrent decisions on the same proposal cannot double-execute.</>,
-            <>Execution applies the rebalance to internal treasury accounting and writes an activity record. No protocol swap or on-chain transaction occurs — only deposits and withdrawals settle on Arc Testnet.</>,
+            <>Execution settles the rebalance as a real swap on Arc Testnet through Synthra: quoted, simulated, signed by the custody key, broadcast and confirmed from the receipt. The realised fill is written to the activity record.</>,
             <>Every decision lands in the tamper-evident audit log with the acting wallet.</>,
           ]}
         />
@@ -142,15 +142,15 @@ const sections: DocSection[] = [
           rows={[
             [
               <DocCode key="m1">safe</DocCode>,
-              'Observation only. The agent analyzes and drafts, but nothing moves without an explicit operator decision.',
+              'Review only. Commands, approvals and execution are refused until an admin switches the mode. Guardians can drop into Safe mode at any time.',
             ],
             [
               <DocCode key="m2">managed</DocCode>,
-              'The agent prepares and queues proposals; operators approve or reject each one.',
+              'The agent compiles policies and queues rebalance proposals; an approver approves or rejects each one before anything settles.',
             ],
             [
               <DocCode key="m3">autonomous</DocCode>,
-              'The agent may act within hard guardrails. Security caps and pause controls still bind every action.',
+              'Rebalance proposals inside the active policy are approved and settled automatically. Security caps and the emergency pause still bind every action.',
             ],
           ]}
         />
@@ -199,7 +199,8 @@ const sections: DocSection[] = [
         <DocList
           items={[
             <>
-              <strong>Emergency pause.</strong> Freezes treasury mutations instantly; state
+              <strong>Emergency pause.</strong> Blocks withdrawals, approvals and autonomous
+              execution instantly, and pins the mode to Safe until an admin lifts it. State
               transitions are serialized so a pause cannot race an execution.
             </>,
             <>
@@ -253,7 +254,7 @@ const sections: DocSection[] = [
             [<DocCode key="m1">POST</DocCode>, <DocCode key="m2">/treasury/wallet/deposits</DocCode>, 'Claim a confirmed on-chain deposit by transaction hash.'],
             [<DocCode key="n1">POST</DocCode>, <DocCode key="n2">/treasury/wallet/withdrawals</DocCode>, 'Signature-authorized withdrawal to the depositor wallet.'],
             [<DocCode key="o1">GET</DocCode>, <DocCode key="o2">/treasury/security</DocCode>, 'Security controls: pause state and limits.'],
-            [<DocCode key="p1">GET</DocCode>, <DocCode key="p2">/treasury/signals</DocCode>, 'Public market signals feed (elements simulated, labeled).'],
+            [<DocCode key="p1">GET</DocCode>, <DocCode key="p2">/treasury/signals</DocCode>, 'Public market signals feed with per-source freshness.'],
             [<DocCode key="q1">GET</DocCode>, <DocCode key="q2">/chain/status</DocCode>, 'Public Arc Testnet chain status.'],
           ]}
         />

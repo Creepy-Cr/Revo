@@ -1,6 +1,7 @@
 {
   "name": "@workspace/api-zod",
   "version": "0.0.0",
+  "description": "Zod schemas generated from the Revo OpenAPI spec, shared by server and client",
   "private": true,
   "type": "module",
   "exports": {

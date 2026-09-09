@@ -1,6 +1,7 @@
 {
   "name": "@workspace/integrations-anthropic-ai",
   "version": "0.0.0",
+  "description": "Anthropic client wired to the Replit AI integrations proxy",
   "private": true,
   "type": "module",
   "exports": {

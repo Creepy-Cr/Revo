@@ -151,7 +151,7 @@ router.get("/treasury/dashboard", requireOperator(), async (req, res): Promise<v
     req.log.error({ err: error }, "Failed to compute treasury dashboard");
     res.status(503).json({
       error:
-        "Treasury state is unavailable: live market data could not be fetched to initialize the simulation.",
+        "Treasury state is unavailable: live market data could not be fetched to value the treasury.",
     });
   }
 });
@@ -248,7 +248,7 @@ router.put("/treasury/mode", requireOperator(["guardian"]), async (req, res): Pr
       ? "AI actions paused. Policies and proposals are review-only until the mode changes."
       : mode === "managed"
         ? "The agent proposes actions; every proposal waits for operator approval."
-        : "Engine proposals within the active policy are auto-approved (simulated).",
+        : "Engine proposals within the active policy are auto-approved and settle on Arc Testnet.",
     "verified",
   );
   req.log.info({ mode }, "Treasury operating mode updated");
@@ -332,7 +332,7 @@ router.post("/treasury/command", requireOperator(["strategist"]), commandGuard, 
         model: POLICY_COMPILER_MODEL,
         max_tokens: 8192,
         system:
-          "You are the policy compiler for a TESTNET-ONLY DAO treasury simulator. Compile the user's instruction ONCE into structured, reviewable policy rules. Return JSON only (no prose, no code fences) with keys: name (short policy name), summary (one sentence of what the policy enforces), maxAllocationPct (number 5-35, max % in any single yield protocol), stablecoinReserveMinPct (number 25-80, minimum % held in stablecoins), drawdownLimitPct (number 5-30, max tolerated drawdown %), riskTolerance ('low'|'medium'|'high'). Respect the DAO mandate: never above 35% in a single protocol, never below 25% liquid USDC. If the instruction asks for something outside those bounds, clamp it and reflect the clamp in the summary. Never claim a trade happened.",
+          "You are the policy compiler for a TESTNET-ONLY DAO treasury on Arc Testnet. Compile the user's instruction ONCE into structured, reviewable policy rules. Return JSON only (no prose, no code fences) with keys: name (short policy name), summary (one sentence of what the policy enforces), maxAllocationPct (number 5-35, max % in any single yield protocol), stablecoinReserveMinPct (number 25-80, minimum % held in stablecoins), drawdownLimitPct (number 5-30, max tolerated drawdown %), riskTolerance ('low'|'medium'|'high'). Respect the DAO mandate: never above 35% in a single protocol, never below 25% liquid USDC. If the instruction asks for something outside those bounds, clamp it and reflect the clamp in the summary. Never claim a trade happened.",
         messages: [{ role: "user", content: parsed.data.command }],
       },
       // Bound the upstream spend: one attempt, hard 60s cap.
@@ -534,7 +534,7 @@ router.post("/treasury/agent/ask", requireOperator(["viewer", "strategist", "app
       {
         model: ARCUS_CHAT_MODEL,
         max_tokens: 8192,
-        system: `You are ${AGENT_NAME}, the autonomous treasury agent of Revo Treasury, a TESTNET-ONLY DAO treasury simulator on Arc Testnet. No real funds exist or move; everything is simulated with testnet USDC, and you must never suggest otherwise.
+        system: `You are ${AGENT_NAME}, the autonomous treasury agent of Revo Treasury, a TESTNET-ONLY DAO treasury on Arc Testnet. No real funds exist or move: deposits, withdrawals and approved rebalances settle on Arc Testnet in testnet USDC that has no real-world value, and you must never suggest otherwise.
 
 You are answering an operator's question about your recent decisions. A JSON snapshot of the live treasury state follows. It is the ONLY source of truth:
 - Ground every claim in specific numbers, signals, proposals, policies, or activity entries from the snapshot. Signals carry per-source component scores (-100..+100 signed, with weights) that compose into the 0-100 composite. Use them to explain WHY a signal reads the way it does.

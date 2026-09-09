@@ -1,6 +1,7 @@
 {
   "name": "@workspace/revo-intro-film",
   "version": "0.0.0",
+  "description": "Revo introduction film, rendered from React",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@workspace/api-client-react",
   "version": "0.0.0",
+  "description": "Typed React Query client generated from the Revo OpenAPI spec",
   "private": true,
   "type": "module",
   "exports": {

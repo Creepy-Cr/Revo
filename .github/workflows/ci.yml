@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Install and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit tests
+        # Integration tests need a real PostgreSQL database and Arc RPC access, so CI runs the
+        # pure unit suites only. Run the full suite locally with `pnpm run test`.
+        # DATABASE_URL is a placeholder: the db client only checks that it is set at import.
+        env:
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+        run: pnpm --filter @workspace/api-server exec vitest run --config vitest.ci.config.ts

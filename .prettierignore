@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+*.tsbuildinfo
+lib/api-client-react/src/generated
+lib/api-zod/src/generated
+docs/architecture/revo-architecture.svg

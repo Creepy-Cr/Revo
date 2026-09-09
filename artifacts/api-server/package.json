@@ -1,6 +1,7 @@
 {
   "name": "@workspace/api-server",
   "version": "0.0.0",
+  "description": "Revo Treasury API: wallet auth, policy engine, custody, Arc settlement and background workers (Express 5)",
   "private": true,
   "type": "module",
   "scripts": {

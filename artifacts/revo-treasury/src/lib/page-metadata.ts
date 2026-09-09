@@ -108,7 +108,7 @@ export function createStructuredData(metadata: PageMetadata) {
         contentUrl: SOCIAL_IMAGE_URL,
         width: 1200,
         height: 630,
-        caption: 'Revo Treasury — Autonomous Treasury Intelligence',
+        caption: 'Revo Treasury: Autonomous Treasury Intelligence',
       },
       {
         '@type': webpageType,

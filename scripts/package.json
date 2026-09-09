@@ -2,9 +2,10 @@
   "name": "@workspace/scripts",
   "version": "0.0.0",
   "private": true,
+  "description": "Maintenance scripts for the Revo monorepo",
   "type": "module",
   "scripts": {
-    "hello": "tsx ./src/hello.ts",
+    "render-architecture": "tsx ./src/render-architecture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

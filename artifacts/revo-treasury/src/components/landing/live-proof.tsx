@@ -226,7 +226,7 @@ export function LiveProof() {
                     Compiled <span className="font-mono text-primary">liquid-reserve-40</span> into
                     an enforced policy. Liquid reserve sits at 38.2%, 1.8 points under
                     your floor, so I drafted a rebalance pulling $51,253 out of the
-                    simulated lending sleeve. It's waiting for your approval.
+                    EURC sleeve. It's waiting for your approval.
                   </p>
                 </div>
               </div>

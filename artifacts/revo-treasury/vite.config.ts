@@ -27,6 +27,12 @@ if (!basePath) {
   );
 }
 
+// Optional, local development only. When the API runs on another port, set
+// API_PROXY_TARGET (for example http://localhost:8080) and the dev server
+// forwards /api there so the browser stays same-origin and the session cookie
+// works. Replit's router does this itself, so the variable is unset there.
+const apiProxyTarget = process.env.API_PROXY_TARGET;
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -72,6 +78,9 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    ...(apiProxyTarget
+      ? { proxy: { '/api': { target: apiProxyTarget, changeOrigin: false } } }
+      : {}),
   },
   preview: {
     port,

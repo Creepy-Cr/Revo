@@ -1,6 +1,7 @@
 {
   "name": "@workspace/mockup-sandbox",
   "version": "2.0.0",
+  "description": "Design preview sandbox: isolated Vite previews of UI components for visual review",
   "type": "module",
   "private": true,
   "scripts": {

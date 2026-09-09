@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 /**
- * Single-row settings table for the treasury simulator.
+ * Single-row settings table for the treasury.
  * `mode` is one of: safe | managed | autonomous (default managed).
  */
 export const treasurySettingsTable = pgTable("treasury_settings", {

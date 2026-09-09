@@ -1,14 +1,30 @@
 {
-  "name": "workspace",
+  "name": "revo",
   "version": "0.0.0",
+  "description": "Autonomous treasury intelligence on Arc. Plain-English policy compiled into enforced guardrails, with USDC settlement on Arc Testnet.",
   "license": "MIT",
+  "private": true,
+  "homepage": "https://therevo.xyz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Creepy-Cr/Revo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Creepy-Cr/Revo/issues"
+  },
+  "engines": {
+    "node": ">=20.19",
+    "pnpm": ">=10"
+  },
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "test": "pnpm --filter @workspace/api-server run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
-  "private": true,
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.3"
   },

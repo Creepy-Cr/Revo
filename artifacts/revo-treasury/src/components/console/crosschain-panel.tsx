@@ -100,7 +100,7 @@ function Body({
         <div className="border-y border-white/[0.08] py-8 px-2 text-center" data-testid="text-crosschain-empty">
           <p className="text-[13px] text-muted-foreground leading-relaxed max-w-sm mx-auto">
             Nothing deposited into Circle Gateway yet. The treasury's Arc balance
-            is unaffected — this panel only tracks funds handed to Gateway for
+            is unaffected; this panel only tracks funds handed to Gateway for
             cross-chain spending.
           </p>
           <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
