@@ -32,7 +32,7 @@ const sections: DocSection[] = [
           asset.
         </p>
         <p>
-          The Service is a technology demonstration of AI-assisted treasury operations. It is not
+          The Service is AI-assisted treasury software. It is not
           operated by a licensed financial institution, broker, exchange, or investment adviser in
           any jurisdiction.
         </p>
@@ -40,35 +40,33 @@ const sections: DocSection[] = [
     ),
   },
   {
-    id: 'testnet-only',
-    heading: 'Testnet-only environment',
+    id: 'mainnet-funds',
+    heading: 'Mainnet funds',
     body: (
       <>
         <DocNote label="Core fact">
-          Every balance, transfer, and yield figure in the Service denominates{' '}
-          <strong>Arc Testnet tokens with no monetary value</strong>. They cannot be exchanged for
-          real assets, and no real funds are ever under management.
+          The Service operates on Arc mainnet and manages <strong>real USDC and EURC</strong>.
+          Deposits, withdrawals, and approved trades can result in financial loss.
         </DocNote>
         <DocList
           items={[
-            <>Test networks may be reset, forked, or discontinued without notice, erasing balances and history.</>,
-            <>Testnet infrastructure (RPC nodes, faucets, explorers) is best-effort and may be slow or unavailable.</>,
-            <>Sending mainnet or any real-value assets to a Service address results in permanent, unrecoverable loss.</>,
+            <>Only send supported USDC on Arc to a treasury deposit address.</>,
+            <>Approved rebalances execute through Uniswap v4 from the treasury's custody wallet.</>,
+            <>Prices, liquidity, and transaction costs can change before a transaction confirms.</>,
           ]}
         />
       </>
     ),
   },
   {
-    id: 'simulated-data',
-    heading: 'Simulated and demonstrational data',
+    id: 'drill-data',
+    heading: 'Safety drills',
     body: (
       <>
         <p>
-          Certain data surfaces in the Service, including elements of the market signals feed and
-          strategy analytics, are <strong>simulated for demonstration</strong> and are labeled
-          accordingly in the interface. Simulated data does not reflect any real market, protocol,
-          or counterparty, and must not be used as an input to any real-world decision.
+          The safety drill is a simulation used to rehearse emergency response. It does not execute
+          trades. Outside that drill, treasury balances and completed transactions reflect on-chain
+          activity and should be treated as real.
         </p>
       </>
     ),
@@ -127,7 +125,7 @@ const sections: DocSection[] = [
         <DocList
           items={[
             <>Smart contracts and network software may contain defects or be exploited.</>,
-            <>Block production, finality, and RPC availability on a testnet are not guaranteed; transactions may stall or fail.</>,
+            <>Block production, finality, RPC availability, and Uniswap v4 liquidity may change; transactions may stall or fail.</>,
             <>Chain identifiers and network parameters are verified at execution time, but network-level misbehavior remains outside the Service's control.</>,
           ]}
         />
@@ -158,7 +156,7 @@ const sections: DocSection[] = [
         </p>
         <p>
           By signing in and operating a treasury, you confirm that you understand these risks,
-          that you use the Service for evaluation on a test network only, and that you assume full
+          that the Service can move real funds on Arc mainnet, and that you assume full
           responsibility for every action taken through your wallet.
         </p>
       </>
@@ -171,7 +169,7 @@ export default function Risk() {
     <DocLayout
       code="RVO-LGL-03"
       title="Risk Disclaimer"
-      tagline="A plain statement of the risks in an AI-operated testnet treasury: model fallibility, testnet impermanence, custody boundaries, and why none of this is financial advice."
+      tagline="A plain statement of the risks in an AI-operated Arc mainnet treasury: model fallibility, protocol risk, custody boundaries, and why none of this is financial advice."
       sections={sections}
     />
   );

@@ -39,7 +39,7 @@ export function AccessGate() {
         ? 'CONNECTING…'
         : 'CONNECT WALLET'
       : step === 2
-        ? 'SWITCH TO ARC TESTNET'
+        ? 'SWITCH TO ARC'
         : isSigningIn
           ? 'AWAITING SIGNATURE…'
           : 'SIGN IN & ENTER CONSOLE';
@@ -55,13 +55,13 @@ export function AccessGate() {
     },
     {
       no: '02',
-      label: 'Arc Testnet network',
+      label: 'Arc mainnet network',
       meta: !address
-        ? 'chain 5042002'
+        ? 'chain 5042'
         : !chainReady
           ? 'checking network…'
           : onArcChain
-            ? 'chain 5042002 · verified'
+            ? 'chain 5042 · verified'
             : 'wrong network detected',
       state: address && onArcChain ? 'done' : step === 2 ? 'active' : 'idle',
     },
@@ -80,7 +80,7 @@ export function AccessGate() {
         <span className="font-display font-medium tracking-tight text-lg">Revo Treasury</span>
         <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-[0.15em] text-yellow-500 uppercase">
           <span className="w-1.5 h-1.5 bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-          TESTNET
+          MAINNET
         </span>
       </div>
 

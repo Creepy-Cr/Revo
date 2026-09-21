@@ -116,7 +116,7 @@ function WalletRow({
 }
 
 export function ConnectWalletModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { wallet, info } = useWalletContext();
+  const { wallet } = useWalletContext();
   const { hasProvider, connecting, error, connect, address } = wallet;
   const discovered = useEip6963Providers(isOpen);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -253,7 +253,7 @@ export function ConnectWalletModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   Connect Wallet
                 </h2>
                 <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
-                  Arc Testnet · testnet funds only
+                  Arc mainnet · real funds
                 </p>
               </div>
               <button
@@ -342,16 +342,7 @@ export function ConnectWalletModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                   <div className="pt-4 border-t border-white/[0.06]">
                     <p className="text-xs text-muted-foreground leading-relaxed text-center">
-                      This connects to Arc Testnet. <strong className="text-white/70">No real funds</strong> are required or at risk.
-                      {info?.faucetUrl && (
-                        <>
-                          {' '}Need testnet USDC?{' '}
-                          <a href={info.faucetUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-orange-300 underline underline-offset-2">
-                            Circle Faucet
-                          </a>
-                          .
-                        </>
-                      )}
+                      This connects to Arc mainnet and can move real funds. Deposit USDC on Arc from an exchange or bridge.
                     </p>
                   </div>
                 </>

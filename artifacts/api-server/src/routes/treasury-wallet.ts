@@ -17,13 +17,12 @@ import {
 } from "@workspace/db";
 import { formatUnits, verifyMessage, type Hex } from "viem";
 import {
-  ARC_TESTNET_CHAIN_ID,
-  ARC_TESTNET_CHAIN_ID_HEX,
-  ARC_TESTNET_CHAIN_NAME,
-  ARC_RPC_URL,
+  ARC_CHAIN_ID,
+  ARC_CHAIN_ID_HEX,
+  ARC_CHAIN_NAME,
+  BROWSER_RPC_URL,
   ChainError,
   EXPLORER_URL,
-  FAUCET_URL,
   USDC_ADDRESS,
   USDC_DECIMALS,
   broadcastSignedTransfer,
@@ -43,6 +42,7 @@ import { auditSafe } from "../lib/audit";
 import { raiseAlert } from "../lib/alerts";
 import { requireOperator } from "../lib/auth";
 import { logger } from "../lib/logger";
+import { assertIssuerAllows, isBlockedByIssuer } from "../lib/custody-policy";
 import {
   checkWithdrawalCaps,
   checkWithdrawalHalt,
@@ -92,21 +92,25 @@ function chainErrorStatus(error: ChainError): number {
 function publicChainError(error: ChainError): string {
   switch (error.code) {
     case "TX_NOT_FOUND":
-      return "That transaction is not on Arc Testnet yet. Wait for confirmation, then retry.";
+      return "That transaction is not on Arc yet. Wait for confirmation, then retry.";
     case "TX_REVERTED":
-      return "The Arc Testnet transaction reverted.";
+      return "The Arc transaction reverted.";
     case "NOT_A_DEPOSIT":
-      return "That transaction is not a valid testnet USDC deposit to this treasury.";
+      return "That transaction is not a valid USDC deposit to this treasury.";
     case "WRONG_CHAIN":
-      return "The configured RPC is not serving Arc Testnet. The operation was refused.";
+      return "The configured RPC is not serving Arc. The operation was refused.";
     case "SEND_UNCERTAIN":
-      return "The Arc Testnet RPC did not return a definitive broadcast result.";
+      return "The Arc RPC did not return a definitive broadcast result.";
     case "SEND_FAILED":
-      return "Arc Testnet rejected the withdrawal before it was broadcast.";
+      return "Arc rejected the withdrawal before it was broadcast.";
     case "SIMULATION_REVERTED":
       return "The transaction reverted when simulated, so it was never signed.";
     case "RPC_UNAVAILABLE":
-      return "Arc Testnet RPC is temporarily unavailable.";
+      return "Arc RPC is temporarily unavailable.";
+    case "REFUSED_BY_POLICY":
+      return error.message;
+    case "PAUSED":
+      return error.message;
   }
 }
 
@@ -142,14 +146,13 @@ router.get("/treasury/wallet", requireOperator(), async (req, res): Promise<void
   res.json(
     GetTreasuryWalletInfoResponse.parse({
       treasuryAddress: wallet.address,
-      chainId: ARC_TESTNET_CHAIN_ID,
-      chainIdHex: ARC_TESTNET_CHAIN_ID_HEX,
-      chainName: ARC_TESTNET_CHAIN_NAME,
-      rpcUrl: ARC_RPC_URL,
+      chainId: ARC_CHAIN_ID,
+      chainIdHex: ARC_CHAIN_ID_HEX,
+      chainName: ARC_CHAIN_NAME,
+      rpcUrl: BROWSER_RPC_URL,
       usdcAddress: USDC_ADDRESS,
       usdcDecimals: USDC_DECIMALS,
       explorerUrl: EXPLORER_URL,
-      faucetUrl: FAUCET_URL,
     }),
   );
 });
@@ -310,8 +313,8 @@ export async function reconcilePendingWithdrawals(
                 : "Withdrawal recovery payload unavailable",
             detail:
               manualReviewReason === "attempts_exhausted"
-                ? "A testnet withdrawal remains unconfirmed after bounded identical rebroadcast attempts. Its reservation remains held; operator review is required."
-                : "A pending testnet withdrawal cannot be safely rebroadcast. Its reservation remains held; operator review is required.",
+                ? "A withdrawal remains unconfirmed after bounded identical rebroadcast attempts. Its reservation remains held; operator review is required."
+                : "A pending withdrawal cannot be safely rebroadcast. Its reservation remains held; operator review is required.",
             data: { transferId: row.id, txHash: row.txHash, attempts: row.broadcastAttempts },
           });
         }
@@ -425,6 +428,22 @@ router.post("/treasury/wallet/deposits", requireOperator(), async (req, res): Pr
   }
 
   const amountUsdc = fromMicroUsdc(deposit.microUsdc);
+  // Whether Circle has blocked the sender. The funds are already in custody,
+  // so the answer decides escalation, not credit; a node that cannot answer
+  // is recorded as unknown rather than treated as either verdict.
+  let senderBlocked: boolean | null;
+  try {
+    const issuerStatus = await isBlockedByIssuer(
+      USDC_ADDRESS,
+      wallet.address as Hex,
+      deposit.from as Hex,
+    );
+    senderBlocked = issuerStatus.destinationBlacklisted;
+  } catch (error) {
+    if (!(error instanceof ChainError && error.code === "RPC_UNAVAILABLE")) throw error;
+    senderBlocked = null;
+    req.log.warn({ err: error, txHash }, "Issuer block status unavailable for deposit sender");
+  }
 
   // Atomic credit: the unique txHash insert and the units credit commit
   // together under the transition lock, so a transaction can never be
@@ -465,7 +484,7 @@ router.post("/treasury/wallet/deposits", requireOperator(), async (req, res): Pr
   await logActivity(
     treasuryId,
     "On-chain deposit received",
-    `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} testnet USDC deposited from ${deposit.from} (verified on Arc Testnet, tx ${txHash.slice(0, 10)}…). Credited to the liquid reserve.`,
+    `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC deposited from ${deposit.from} (verified on Arc, tx ${txHash.slice(0, 10)}…). Credited to the liquid reserve.`,
     "executed",
     "onchain",
   );
@@ -477,8 +496,27 @@ router.post("/treasury/wallet/deposits", requireOperator(), async (req, res): Pr
     sessionId: req.operator!.sessionId,
     resourceId: credited.id,
     result: "ok",
-    detail: { txHash, amountUsdc, from: deposit.from },
+    detail: {
+      txHash,
+      amountUsdc,
+      from: deposit.from,
+      blockedSender: senderBlocked,
+    },
   });
+  if (senderBlocked) {
+    await raiseAlert({
+      treasuryId,
+      severity: "critical",
+      kind: "custody.blocked-sender",
+      title: "Deposit received from an issuer-blocked address",
+      detail: `The verified USDC deposit ${txHash} was credited because the funds reached custody, but Circle reports sender ${deposit.from} as blocked.`,
+      data: { txHash, sender: deposit.from, amountUsdc },
+    });
+    req.log.error(
+      { treasuryId, txHash, sender: deposit.from, amountUsdc },
+      "Blocked-sender deposit credited and escalated",
+    );
+  }
   req.log.info({ txHash, amountUsdc, from: deposit.from }, "On-chain deposit credited");
   res.status(201).json(ClaimTreasuryDepositResponse.parse(serializeTransfer(credited)));
 });
@@ -535,6 +573,31 @@ router.post("/treasury/wallet/withdrawals", requireOperator(), async (req, res):
   }
 
   const wallet = await ensureTreasuryWallet(treasuryId);
+  try {
+    await assertIssuerAllows(USDC_ADDRESS, wallet.address as Hex, address as Hex);
+  } catch (error) {
+    if (error instanceof ChainError && error.code === "RPC_UNAVAILABLE") {
+      // Not a verdict: the issuer's controls could not be read. Nothing was
+      // reserved or signed, and the operator may simply try again.
+      req.log.warn({ err: error, treasuryId, address }, "Issuer controls unreadable; withdrawal not attempted");
+      res.status(503).json({ error: publicChainError(error) });
+      return;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    req.log.error({ err: error, treasuryId, address }, "Withdrawal refused by issuer policy");
+    await auditSafe({
+      treasuryId,
+      action: "wallet.withdrawal.request",
+      actorWallet: req.operator!.wallet,
+      actorRole: req.operator!.role,
+      sessionId: req.operator!.sessionId,
+      result: "refused",
+      reason,
+      detail: { destination: address, amountUsdc, terminal: true },
+    });
+    res.status(409).json({ error: reason });
+    return;
+  }
   try {
     await loadState(treasuryId);
   } catch (error) {
@@ -833,7 +896,7 @@ router.post("/treasury/wallet/withdrawals", requireOperator(), async (req, res):
   await logActivity(
     treasuryId,
     "On-chain withdrawal executed",
-    `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} testnet USDC sent to ${address} on Arc Testnet (tx ${txHash.slice(0, 10)}…). Debited from the liquid reserve.`,
+    `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC sent to ${address} on Arc (tx ${txHash.slice(0, 10)}…). Debited from the liquid reserve.`,
     "executed",
     "onchain",
   );

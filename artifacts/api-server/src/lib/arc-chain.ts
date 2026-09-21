@@ -5,46 +5,56 @@ import {
   createPublicClient,
   defineChain,
   encodeFunctionData,
-  http,
   isAddress,
   keccak256,
   parseAbi,
   parseEventLogs,
   type Address,
   type Hex,
+  type PublicClient,
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { db, pool, treasuryWalletTable, type TreasuryWallet } from "@workspace/db";
 import * as dbSchema from "@workspace/db/schema";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { DEFAULT_ARC_RPC_URLS, arcRpcEndpoints, arcTransport } from "./arc-rpc";
 import { openCustodyKey, sealCustodyKey } from "./custody-crypto";
 import { logger } from "./logger";
+import { ARC_TOKENS } from "./arc-tokens";
+import { PERMIT2, UNIVERSAL_ROUTER } from "./uniswap-v4";
 
 export type CustodyTransaction = NodePgDatabase<typeof dbSchema>;
 type CustodyExecutor = typeof db | CustodyTransaction;
 
 /**
- * Real Arc Testnet (Circle) chain access.
+ * Arc mainnet (Circle) chain access.
  *
  * Guardrails, enforced here and nowhere overridable:
- * - The RPC client is pinned to Arc TESTNET and every on-chain operation
- *   first verifies the node actually reports chain id 5042002. If the RPC
- *   answers with any other chain (i.e. someone points ARC_TESTNET_RPC_URL at
- *   a mainnet node), we refuse loudly.
+ * - The RPC pool is pinned to Arc MAINNET and every on-chain operation first
+ *   verifies the answering node reports chain id 5042. If a provider answers
+ *   with any other chain (a misconfigured `ARC_RPC_URLS`, a testnet endpoint
+ *   left over from staging), we refuse loudly. This is real money.
  * - RPC failures are explicit errors - no cached, synthetic, or assumed
  *   on-chain state is ever fabricated.
+ * - Requests fail over across providers (see `arc-rpc.ts`); the chain id
+ *   check runs against whichever provider actually answered.
  */
 
-export const ARC_TESTNET_CHAIN_ID = 5042002;
-export const ARC_TESTNET_CHAIN_ID_HEX = "0x4cef52";
-export const ARC_TESTNET_CHAIN_NAME = "Arc Testnet";
-export const ARC_RPC_URL = process.env.ARC_TESTNET_RPC_URL ?? "https://rpc.testnet.arc.io";
+export const ARC_CHAIN_ID = 5042;
+export const ARC_CHAIN_ID_HEX = "0x13b2";
+export const ARC_CHAIN_NAME = "Arc";
+/**
+ * The RPC URL handed to browsers for the add-chain prompt. Always Arc's
+ * public endpoint: `ARC_RPC_URLS` is server configuration and may embed
+ * provider keys, so it is never returned by any route. Server requests go
+ * through `arcTransport`.
+ */
+export const BROWSER_RPC_URL: string = DEFAULT_ARC_RPC_URLS[0]!;
 /** USDC is Arc's native asset; this is its ERC-20 interface (6 decimals). */
 export const USDC_ADDRESS: Address = "0x3600000000000000000000000000000000000000";
 export const USDC_DECIMALS = 6;
-export const EXPLORER_URL = "https://testnet.arcscan.app";
-export const FAUCET_URL = "https://faucet.circle.com";
+export const EXPLORER_URL = "https://arc-scan.org";
 
 /** Micro-USDC (6-decimal integer) conversions. */
 export const toMicroUsdc = (amount: number): bigint => BigInt(Math.round(amount * 1e6));
@@ -58,13 +68,12 @@ const erc20Abi = parseAbi([
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 ]);
 
-export const arcTestnet = defineChain({
-  id: ARC_TESTNET_CHAIN_ID,
-  name: ARC_TESTNET_CHAIN_NAME,
+export const arc = defineChain({
+  id: ARC_CHAIN_ID,
+  name: ARC_CHAIN_NAME,
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: [ARC_RPC_URL] } },
+  rpcUrls: { default: { http: arcRpcEndpoints().map((endpoint) => endpoint.url) } },
   blockExplorers: { default: { name: "Arcscan", url: EXPLORER_URL } },
-  testnet: true,
 });
 
 /** Typed on-chain failure so routes can map causes to honest status codes. */
@@ -78,7 +87,9 @@ export class ChainError extends Error {
       | "NOT_A_DEPOSIT"
       | "SEND_FAILED"
       | "SEND_UNCERTAIN"
-      | "SIMULATION_REVERTED",
+      | "SIMULATION_REVERTED"
+      | "REFUSED_BY_POLICY"
+      | "PAUSED",
     message: string,
   ) {
     super(message);
@@ -96,52 +107,61 @@ function safeUpstreamDetail(error: unknown): string {
 /**
  * The exact message a depositor signs (EIP-191 personal_sign) to authorize a
  * withdrawal to their own wallet. MUST stay byte-identical to the frontend
- * builder in artifacts/arc-treasury-dao/src/lib/arc-wallet.ts.
+ * builder in artifacts/revo-treasury/src/lib/arc-wallet.ts.
  */
 export function withdrawalAuthMessage(address: string, amount: string, issuedAt: string): string {
   return [
-    "Revo Treasury testnet withdrawal",
+    "Revo Treasury withdrawal",
     `Amount: ${amount} USDC`,
     `Destination: ${address.toLowerCase()}`,
     `Issued at: ${issuedAt}`,
-    `Chain: Arc Testnet (${ARC_TESTNET_CHAIN_ID})`,
+    `Chain: Arc (${ARC_CHAIN_ID})`,
   ].join("\n");
 }
 
 const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(ARC_RPC_URL, { timeout: 15_000 }),
+  chain: arc,
+  transport: arcTransport({ timeout: 15_000 }),
 });
 
 /**
- * Confirms the RPC node really is Arc Testnet (chain id 5042002) before any
- * on-chain read or write. Deliberately NOT cached: it is re-verified per
- * operation so an endpoint that rebinds mid-process is still refused - this
- * service never touches a non-testnet chain.
+ * The one Arc client every server module reads through. Sharing it means one
+ * failover order, one health record and one chain guard for the whole
+ * process; modules must not build their own transport.
  */
-export async function assertArcTestnet(): Promise<void> {
+export function arcPublicClient(): PublicClient {
+  return publicClient as PublicClient;
+}
+
+/**
+ * Confirms the answering RPC node really is Arc mainnet (chain id 5042)
+ * before any on-chain read or write. Deliberately NOT cached: it is
+ * re-verified per operation so a provider that rebinds mid-process is still
+ * refused - this service never touches any other chain.
+ */
+export async function assertArcChain(): Promise<void> {
   let reportedId: number;
   try {
     reportedId = await publicClient.getChainId();
   } catch (error) {
     throw new ChainError(
       "RPC_UNAVAILABLE",
-      `Arc Testnet RPC is unreachable (${safeUpstreamDetail(error)}). No on-chain action was taken.`,
+      `Arc RPC is unreachable on every configured provider (${safeUpstreamDetail(error)}). No on-chain action was taken.`,
     );
   }
-  if (reportedId !== ARC_TESTNET_CHAIN_ID) {
+  if (reportedId !== ARC_CHAIN_ID) {
     throw new ChainError(
       "WRONG_CHAIN",
-      `Refusing to operate: RPC reports chain id ${reportedId}, expected Arc Testnet (${ARC_TESTNET_CHAIN_ID}). Execution is locked to testnet.`,
+      `Refusing to operate: RPC reports chain id ${reportedId}, expected Arc mainnet (${ARC_CHAIN_ID}). Execution is locked to Arc mainnet.`,
     );
   }
 }
 
 /**
- * Loads (or provisions on first use) a treasury's own Arc Testnet custody
- * wallet - one row per treasury, keyed by the treasury id. The key is
- * generated server-side and only ever used against the chain-id-verified
- * testnet RPC, so it can never hold mainnet value.
+ * Loads (or provisions on first use) a treasury's own Arc custody wallet -
+ * one row per treasury, keyed by the treasury id. The key is generated
+ * server-side, sealed at rest, and only ever used against the
+ * chain-id-verified Arc mainnet RPC pool.
  */
 export async function ensureTreasuryWallet(
   treasuryId: string,
@@ -247,7 +267,7 @@ export interface VerifiedDeposit {
 }
 
 /**
- * Verifies a claimed deposit transaction against the Arc Testnet RPC. Only a
+ * Verifies a claimed deposit transaction against the Arc RPC. Only a
  * successful, mined transaction that actually moved USDC to the treasury
  * address counts - either via ERC-20 `Transfer` logs (6 decimals) or as a
  * native-value send (18 decimals; same underlying USDC balance on Arc).
@@ -256,7 +276,7 @@ export async function verifyDeposit(
   txHash: Hex,
   treasuryAddress: string,
 ): Promise<VerifiedDeposit> {
-  await assertArcTestnet();
+  await assertArcChain();
 
   let receipt;
   try {
@@ -266,10 +286,10 @@ export async function verifyDeposit(
     if (/not.*found|could not be found/i.test(message)) {
       throw new ChainError(
         "TX_NOT_FOUND",
-        "That transaction is not on Arc Testnet (yet). Wait for it to confirm, then try again.",
+        "That transaction is not on Arc (yet). Wait for it to confirm, then try again.",
       );
     }
-    throw new ChainError("RPC_UNAVAILABLE", `Arc Testnet RPC failed while verifying: ${message}`);
+    throw new ChainError("RPC_UNAVAILABLE", `Arc RPC failed while verifying: ${message}`);
   }
 
   if (receipt.status !== "success") {
@@ -277,6 +297,16 @@ export async function verifyDeposit(
   }
 
   const treasury = treasuryAddress.toLowerCase();
+
+  // A transaction the custody wallet itself sent is never a deposit: a
+  // rebalance swap pays its output back into custody, and crediting that as
+  // a deposit would invent a depositor and inflate the ledger.
+  if (receipt.from.toLowerCase() === treasury) {
+    throw new ChainError(
+      "NOT_A_DEPOSIT",
+      "That transaction was sent by the treasury's own custody wallet, so it is a swap, approval or withdrawal rather than a deposit.",
+    );
+  }
 
   // ERC-20 Transfer(s) into the treasury on the USDC interface contract.
   const transfers = parseEventLogs({ abi: erc20Abi, eventName: "Transfer", logs: receipt.logs })
@@ -308,7 +338,7 @@ export async function verifyDeposit(
   } catch (error) {
     throw new ChainError(
       "RPC_UNAVAILABLE",
-      `Arc Testnet RPC failed while verifying: ${safeUpstreamDetail(error)}`,
+      `Arc RPC failed while verifying: ${safeUpstreamDetail(error)}`,
     );
   }
   if (tx.to && tx.to.toLowerCase() === treasury && tx.value > 0n) {
@@ -321,7 +351,7 @@ export async function verifyDeposit(
 
   throw new ChainError(
     "NOT_A_DEPOSIT",
-    "That transaction did not transfer testnet USDC to the treasury address, so there is nothing to credit.",
+    "That transaction did not transfer USDC to the treasury address, so there is nothing to credit.",
   );
 }
 
@@ -330,6 +360,99 @@ export interface SignedTransfer {
   hash: Hex;
   serialized: Hex;
   nonce: number;
+}
+
+const LEGAL_SELECTORS = {
+  transfer: "0xa9059cbb",
+  approve: "0x095ea7b3",
+  permit2Approve: "0x87517c45",
+  routerExecute: "0x3593564c",
+} as const;
+
+/** Pure signer firewall. It must run before custody key material is opened. */
+export function assertCustodyCallAllowed(to: Address, data: Hex, value: bigint = 0n): void {
+  const target = to.toLowerCase();
+  const selector = data.slice(0, 10).toLowerCase();
+  const usdc = ARC_TOKENS.USDC.address.toLowerCase();
+  const eurc = ARC_TOKENS.EURC.address.toLowerCase();
+  const isToken = target === usdc || target === eurc;
+  let allowed =
+    (isToken && selector === LEGAL_SELECTORS.transfer) ||
+    (isToken && selector === LEGAL_SELECTORS.approve) ||
+    (target === PERMIT2.toLowerCase() && selector === LEGAL_SELECTORS.permit2Approve) ||
+    (target === UNIVERSAL_ROUTER.toLowerCase() && selector === LEGAL_SELECTORS.routerExecute);
+  if (value !== 0n) allowed = false;
+
+  if (allowed && selector === LEGAL_SELECTORS.approve) {
+    const spender = `0x${data.slice(34, 74)}`.toLowerCase();
+    allowed = spender === PERMIT2.toLowerCase();
+  } else if (allowed && selector === LEGAL_SELECTORS.permit2Approve) {
+    const spender = `0x${data.slice(98, 138)}`.toLowerCase();
+    allowed = spender === UNIVERSAL_ROUTER.toLowerCase();
+  }
+  if (!allowed) {
+    logger.error({ to, selector, value: value.toString() }, "Custody call refused by signer allowlist");
+    throw new ChainError(
+      "REFUSED_BY_POLICY",
+      "The custody signer refused a contract call outside its fixed allowlist.",
+    );
+  }
+}
+
+async function assertSignerAllowlist(
+  wallet: TreasuryWallet,
+  to: Address,
+  data: Hex,
+  value: bigint,
+): Promise<void> {
+  try {
+    assertCustodyCallAllowed(to, data, value);
+  } catch (error) {
+    const { auditSafe } = await import("./audit");
+    await auditSafe({
+      treasuryId: wallet.id,
+      action: "custody.sign",
+      actorRole: "system",
+      result: "refused",
+      reason: error instanceof Error ? error.message : String(error),
+      detail: { to, selector: data.slice(0, 10), value: value.toString() },
+    });
+    throw error;
+  }
+}
+
+async function assertSendPolicy(
+  wallet: TreasuryWallet,
+  token: Address,
+  executor: CustodyExecutor,
+  destination?: Address,
+): Promise<void> {
+  try {
+    const { getSecurityControls, withdrawalHaltReason } = await import("./security-controls");
+    const controls = await getSecurityControls(wallet.id, executor);
+    const halted = withdrawalHaltReason(controls);
+    if (halted) {
+      logger.error({ treasuryId: wallet.id, reason: halted }, "Custody signing refused while paused");
+      throw new ChainError("PAUSED", halted);
+    }
+    const { assertIssuerAllows } = await import("./custody-policy");
+    await assertIssuerAllows(token, wallet.address as Address, destination);
+  } catch (error) {
+    // An unreadable issuer control is not a verdict; only real refusals are
+    // written to the audit chain as such.
+    if (error instanceof ChainError && error.code === "RPC_UNAVAILABLE") throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    const { auditSafe } = await import("./audit");
+    await auditSafe({
+      treasuryId: wallet.id,
+      action: "custody.sign",
+      actorRole: "system",
+      result: "refused",
+      reason,
+      detail: { token, destination: destination ?? null },
+    });
+    throw error;
+  }
 }
 
 /**
@@ -399,7 +522,7 @@ export function custodySendLock(treasuryId: string) {
 }
 
 /**
- * Prepares and locally signs a testnet USDC transfer from the treasury
+ * Prepares and locally signs a USDC transfer from the treasury
  * wallet. Nothing touches the mempool here, so ANY failure in this step is
  * definitively refundable. The returned hash is derived from the signed
  * payload, letting the caller persist it before broadcasting - an ambiguous
@@ -411,17 +534,18 @@ export async function signUsdcTransfer(
   microUsdc: bigint,
   executor: CustodyExecutor = db,
 ): Promise<SignedTransfer> {
-  await assertArcTestnet();
+  await assertArcChain();
   if (!isAddress(to)) {
     throw new ChainError("SEND_FAILED", `Invalid destination address: ${to}`);
   }
-
-  const account = privateKeyToAccount(await custodySigningKey(wallet, executor));
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: "transfer",
     args: [to, microUsdc],
   });
+  await assertSignerAllowlist(wallet, USDC_ADDRESS, data, 0n);
+  await assertSendPolicy(wallet, USDC_ADDRESS, executor, to as Address);
+  const account = privateKeyToAccount(await custodySigningKey(wallet, executor));
 
   try {
     const [nonce, gas, fees] = await Promise.all([
@@ -430,7 +554,7 @@ export async function signUsdcTransfer(
       publicClient.estimateFeesPerGas(),
     ]);
     const serialized = await account.signTransaction({
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
       type: "eip1559",
       to: USDC_ADDRESS,
       data,
@@ -455,7 +579,7 @@ export async function readAllowance(
   owner: string,
   spender: Address,
 ): Promise<bigint> {
-  await assertArcTestnet();
+  await assertArcChain();
   try {
     return (await publicClient.readContract({
       address: token,
@@ -466,7 +590,7 @@ export async function readAllowance(
   } catch (error) {
     throw new ChainError(
       "RPC_UNAVAILABLE",
-      `Arc Testnet RPC failed while reading the token allowance: ${safeUpstreamDetail(error)}`,
+      `Arc RPC failed while reading the token allowance: ${safeUpstreamDetail(error)}`,
     );
   }
 }
@@ -487,7 +611,7 @@ export async function simulateCustodyCall(
   to: Address,
   data: Hex,
 ): Promise<void> {
-  await assertArcTestnet();
+  await assertArcChain();
   try {
     await publicClient.call({ account: from as Address, to, data });
   } catch (error) {
@@ -500,7 +624,7 @@ export async function simulateCustodyCall(
     ) {
       throw new ChainError(
         "RPC_UNAVAILABLE",
-        `Arc Testnet RPC could not simulate the transaction, so it was not signed: ${message}`,
+        `Arc RPC could not simulate the transaction, so it was not signed: ${message}`,
       );
     }
     throw new ChainError(
@@ -523,7 +647,28 @@ export async function signCustodyCall(
   data: Hex,
   executor: CustodyExecutor = db,
 ): Promise<SignedTransfer> {
-  await assertArcTestnet();
+  await assertArcChain();
+  await assertSignerAllowlist(wallet, to, data, 0n);
+  const target = to.toLowerCase();
+  let policyTokens: Address[];
+  if (
+    target === ARC_TOKENS.USDC.address.toLowerCase() ||
+    target === ARC_TOKENS.EURC.address.toLowerCase()
+  ) {
+    policyTokens = [to];
+  } else if (target === PERMIT2.toLowerCase()) {
+    policyTokens = [`0x${data.slice(34, 74)}` as Address];
+  } else {
+    // Router calldata can spend one Circle token and receive the other. Both
+    // issuers' controls must permit the operation at the instant of signing.
+    policyTokens = [
+      ARC_TOKENS.USDC.address as Address,
+      ARC_TOKENS.EURC.address as Address,
+    ];
+  }
+  for (const token of policyTokens) {
+    await assertSendPolicy(wallet, token, executor);
+  }
   const account = privateKeyToAccount(await custodySigningKey(wallet, executor));
   try {
     const [nonce, gas, fees] = await Promise.all([
@@ -532,7 +677,7 @@ export async function signCustodyCall(
       publicClient.estimateFeesPerGas(),
     ]);
     const serialized = await account.signTransaction({
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_CHAIN_ID,
       type: "eip1559",
       to,
       data,
@@ -559,14 +704,14 @@ export async function signCustodyCall(
  * size spendable balances against this rather than against what is held.
  */
 export async function gasReserveMicroUsdc(gasUnits: bigint): Promise<bigint> {
-  await assertArcTestnet();
+  await assertArcChain();
   let fees;
   try {
     fees = await publicClient.estimateFeesPerGas();
   } catch (error) {
     throw new ChainError(
       "RPC_UNAVAILABLE",
-      `Arc Testnet gas price could not be read, so no spendable balance could be derived: ${safeUpstreamDetail(error)}`,
+      `Arc gas price could not be read, so no spendable balance could be derived: ${safeUpstreamDetail(error)}`,
     );
   }
   // Native USDC carries 18 decimals; the ERC-20 interface over it carries 6.
@@ -626,17 +771,17 @@ export async function broadcastSignedTransfer(signed: SignedTransfer): Promise<v
       // treat as unknown outcome and let reconciliation resolve it.
       throw new ChainError(
         "SEND_UNCERTAIN",
-        `The Arc Testnet RPC reported the transaction as known but it could not be verified (tx ${signed.hash}); it may or may not have been accepted.`,
+        `The Arc RPC reported the transaction as known but it could not be verified (tx ${signed.hash}); it may or may not have been accepted.`,
       );
     }
 
     if (isAmbiguousBroadcastFailure(error)) {
       throw new ChainError(
         "SEND_UNCERTAIN",
-        `The Arc Testnet RPC failed mid-broadcast (tx ${signed.hash}); the transaction may or may not have been accepted.`,
+        `The Arc RPC failed mid-broadcast (tx ${signed.hash}); the transaction may or may not have been accepted.`,
       );
     }
-    throw new ChainError("SEND_FAILED", `Arc Testnet rejected the withdrawal transaction: ${message}`);
+    throw new ChainError("SEND_FAILED", `Arc rejected the withdrawal transaction: ${message}`);
   }
 }
 

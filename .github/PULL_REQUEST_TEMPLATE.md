@@ -11,6 +11,6 @@
 ## Safety checklist
 
 - [ ] Does not weaken any custody, approval, cap or pause check
-- [ ] Still testnet only (chain guard, RPC defaults)
+- [ ] Still Arc mainnet only (chain guard, RPC defaults, no testnet mode)
 - [ ] No secrets, keys or personal data in the diff
 - [ ] Docs and README updated if behaviour changed

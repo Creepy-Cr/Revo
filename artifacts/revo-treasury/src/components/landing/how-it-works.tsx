@@ -12,7 +12,7 @@ export function HowItWorks() {
     },
     {
       title: "Queue Proposal",
-      description: "In Managed mode every proposal waits for human approval; in Autonomous mode Revo acts only inside the active policy. Approving settles the rebalance as a real swap on Arc Testnet, confirmed from the receipt."
+      description: "In Managed mode every proposal waits for human approval; in Autonomous mode Revo acts only inside the active policy. Approving settles the rebalance as a real Uniswap v4 swap on Arc, confirmed from the receipt."
     }
   ];
 

@@ -21,7 +21,7 @@ function nextAddress(): string {
 }
 
 function gatewayResponse(address: string, balances: Record<string, string> = {}) {
-  const rows = ["Ethereum_Sepolia", "Base_Sepolia", "Arc_Testnet"].map((chain) => ({
+  const rows = ["Ethereum", "Base", "Arc"].map((chain) => ({
     chain,
     confirmedBalance: balances[chain] ?? "0.000000",
   }));
@@ -46,9 +46,12 @@ describe("Circle Gateway balance reads", () => {
 
     expect(reading.available).toBe(true);
     expect(reading.stale).toBe(false);
-    expect(reading.chains[0]?.chain).toBe("Arc_Testnet");
+    expect(reading.chains[0]?.chain).toBe("Arc");
     expect(reading.chains[0]?.isArc).toBe(true);
-    expect(reading.chains[0]?.label).toBe("Arc Testnet");
+    expect(reading.chains[0]?.label).toBe("Arc");
+    expect(getBalances).toHaveBeenCalledWith(
+      expect.objectContaining({ networkType: "mainnet" }),
+    );
   });
 
   it("reports an empty Gateway as not-deposited rather than as an empty treasury", async () => {
@@ -66,7 +69,7 @@ describe("Circle Gateway balance reads", () => {
 
   it("marks the treasury as deposited when any chain holds USDC", async () => {
     const address = nextAddress();
-    getBalances.mockResolvedValueOnce(gatewayResponse(address, { Base_Sepolia: "12.500000" }));
+    getBalances.mockResolvedValueOnce(gatewayResponse(address, { Base: "12.500000" }));
 
     const reading = await readCrosschainBalance(address);
 
@@ -93,7 +96,7 @@ describe("failed and malformed Gateway reads", () => {
     const address = nextAddress();
     getBalances.mockResolvedValueOnce({
       totalConfirmedBalance: "0.000000",
-      breakdown: [{ depositor: address, breakdown: [{ chain: "Arc_Testnet" }] }],
+      breakdown: [{ depositor: address, breakdown: [{ chain: "Arc" }] }],
     });
 
     const reading = await readCrosschainBalance(address);
@@ -108,7 +111,7 @@ describe("failed and malformed Gateway reads", () => {
     getBalances.mockResolvedValueOnce({
       totalConfirmedBalance: "unavailable",
       breakdown: [
-        { depositor: address, breakdown: [{ chain: "Arc_Testnet", confirmedBalance: "0.000000" }] },
+        { depositor: address, breakdown: [{ chain: "Arc", confirmedBalance: "0.000000" }] },
       ],
     });
 
@@ -120,7 +123,7 @@ describe("failed and malformed Gateway reads", () => {
 
   it("serves the last good reading marked stale when a refresh fails", async () => {
     const address = nextAddress();
-    getBalances.mockResolvedValueOnce(gatewayResponse(address, { Arc_Testnet: "5.000000" }));
+    getBalances.mockResolvedValueOnce(gatewayResponse(address, { Arc: "5.000000" }));
     const good = await readCrosschainBalance(address);
     expect(good.available).toBe(true);
 

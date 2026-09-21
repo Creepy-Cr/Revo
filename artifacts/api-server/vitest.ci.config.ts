@@ -11,11 +11,13 @@ export default defineConfig({
   test: {
     include: [
       "src/lib/appkit.test.ts",
+      "src/lib/arc-rpc.test.ts",
       "src/lib/auth-origin.test.ts",
       "src/lib/proposal-contract.test.ts",
       "src/lib/rebalance-execution.test.ts",
       "src/lib/signals.test.ts",
-      "src/lib/synthra.test.ts",
+      "src/lib/uniswap-v4.test.ts",
+      "src/lib/custody-policy.test.ts",
       "src/lib/tower.test.ts",
     ],
   },

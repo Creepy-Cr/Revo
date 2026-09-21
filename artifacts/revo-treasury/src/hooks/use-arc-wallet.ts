@@ -21,7 +21,7 @@ function firstAccount(payload: unknown): string | null {
 /**
  * Connection state for the user's injected (EIP-1193) wallet. Connection is
  * detected silently on mount via eth_accounts; `connect` prompts and then
- * switches/adds Arc Testnet so the user can never sign against another chain
+ * switches/adds Arc so the user can never sign against another chain
  * from this UI.
  *
  * The provider lives in React state so account/chain listeners are

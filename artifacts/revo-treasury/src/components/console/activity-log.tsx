@@ -2,7 +2,7 @@ import { type AgentActivity } from '@workspace/api-client-react';
 import { ExternalLink } from 'lucide-react';
 
 /**
- * The activity feed mixes real Arc Testnet settlements with simulated
+ * The activity feed mixes real Arc settlements with safety-drill
  * accounting moves, so every row is badged from the API's machine-readable
  * `kind` field rather than by parsing the title. Unknown values fall back to
  * SYSTEM, which claims the least.

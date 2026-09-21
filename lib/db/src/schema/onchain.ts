@@ -1,11 +1,12 @@
 import { doublePrecision, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
- * The treasury's own Arc Testnet custody wallet. Auto-provisioned on first
- * use so depositors have a real on-chain address to send testnet USDC to and
- * withdrawals can be signed server-side. This key only ever holds Arc
- * TESTNET USDC (chain id is verified against Arc Testnet before any
- * on-chain operation) - it has no mainnet value by construction.
+ * The treasury's own Arc mainnet custody wallet. Auto-provisioned on first
+ * use so depositors have a real on-chain address to send USDC to and
+ * withdrawals can be signed server-side. This key holds real USDC and EURC
+ * on Arc mainnet: the chain id is verified against Arc (5042) before any
+ * on-chain operation, the key is sealed at rest and the signer only accepts
+ * an allowlisted set of calls.
  */
 export const treasuryWalletTable = pgTable("treasury_wallet", {
   id: text("id").primaryKey(),
@@ -24,7 +25,7 @@ export const treasuryWalletTable = pgTable("treasury_wallet", {
 export type TreasuryWallet = typeof treasuryWalletTable.$inferSelect;
 
 /**
- * Append-only ledger of real on-chain testnet USDC movements between user
+ * Append-only ledger of real on-chain USDC movements between user
  * wallets and the treasury. `txHash` is unique so a deposit transaction can
  * never be credited twice; withdrawal rows are inserted `pending` (units
  * already debited as a reservation) and move to `confirmed` or `failed`

@@ -138,7 +138,7 @@ export function WalletConnectButton() {
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-primary hover:text-orange-300 hover:bg-primary/10 rounded-lg transition-colors text-left leading-relaxed"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    <span>Switch to Arc Testnet</span>
+                    <span>Switch to Arc</span>
                   </button>
                 )}
                 {info?.explorerUrl && (

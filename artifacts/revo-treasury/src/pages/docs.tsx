@@ -14,8 +14,8 @@ const sections: DocSection[] = [
     body: (
       <>
         <p>
-          Revo Treasury is an AI-assisted treasury console on the <strong>Arc Testnet</strong>{' '}
-          (chain 5042002). Each operator wallet owns a private treasury. Arcus, the treasury
+          Revo Treasury is an AI-assisted treasury console on <strong>Arc mainnet</strong>{' '}
+          (chain 5042). Each operator wallet owns a private treasury. Arcus, the treasury
           agent, turns natural-language strategy into validated proposals, and every mutation
           passes through security controls before it touches state.
         </p>
@@ -31,8 +31,8 @@ const sections: DocSection[] = [
               the human-plus-agent workflow.
             </>,
             <>
-              <strong>Settlement plane.</strong> Per-treasury custody wallets that move testnet
-              USDC on-chain for deposits and withdrawals.
+              <strong>Settlement plane.</strong> Per-treasury custody wallets that move USDC
+              on-chain for deposits, withdrawals, and Uniswap v4 swaps.
             </>,
           ]}
         />
@@ -52,8 +52,8 @@ const sections: DocSection[] = [
               automatically (EIP-6963). No extension-specific setup.
             </>,
             <>
-              <strong>02: Switch to Arc Testnet.</strong> The console offers the network switch
-              (chain 5042002) if your wallet is elsewhere.
+              <strong>02: Switch to Arc.</strong> The console offers the network switch
+              (chain 5042) if your wallet is elsewhere.
             </>,
             <>
               <strong>03: Verify ownership.</strong> Sign a one-time message. The signature
@@ -111,7 +111,7 @@ const sections: DocSection[] = [
         <DocList
           items={[
             <>Approve/reject actions are atomic: concurrent decisions on the same proposal cannot double-execute.</>,
-            <>Execution settles the rebalance as a real swap on Arc Testnet through Synthra: quoted, simulated, signed by the custody key, broadcast and confirmed from the receipt. The realised fill is written to the activity record.</>,
+            <>Execution settles the rebalance as a real swap on Arc through Uniswap v4: quoted, checked with an eth_call before signing, signed by the custody key, broadcast, and confirmed from the receipt. The realised fill is written to the activity record.</>,
             <>Every decision lands in the tamper-evident audit log with the acting wallet.</>,
           ]}
         />
@@ -163,14 +163,14 @@ const sections: DocSection[] = [
     body: (
       <>
         <p>
-          Each treasury has a dedicated deposit address on Arc Testnet, shown in the console's
+          Each treasury has a dedicated deposit address on Arc, shown in the console's
           wallet panel.
         </p>
         <DocList
           items={[
             <>
-              <strong>Deposit.</strong> Send testnet USDC to your treasury address, then submit
-              the transaction hash. The transfer is verified against the Arc Testnet RPC before
+              <strong>Deposit.</strong> Send USDC on Arc to your treasury address, then submit
+              the transaction hash. The transfer is verified against the Arc RPC before
               being credited; a hash can only ever be credited once, to one treasury.
             </>,
             <>
@@ -185,7 +185,7 @@ const sections: DocSection[] = [
           ]}
         />
         <DocNote label="Warning">
-          Arc Testnet USDC only. Never send mainnet assets or anything of value; it is
+          Send only supported USDC on Arc to the treasury address. Unsupported assets may be
           unrecoverable.
         </DocNote>
       </>
@@ -255,7 +255,7 @@ const sections: DocSection[] = [
             [<DocCode key="n1">POST</DocCode>, <DocCode key="n2">/treasury/wallet/withdrawals</DocCode>, 'Signature-authorized withdrawal to the depositor wallet.'],
             [<DocCode key="o1">GET</DocCode>, <DocCode key="o2">/treasury/security</DocCode>, 'Security controls: pause state and limits.'],
             [<DocCode key="p1">GET</DocCode>, <DocCode key="p2">/treasury/signals</DocCode>, 'Public market signals feed with per-source freshness.'],
-            [<DocCode key="q1">GET</DocCode>, <DocCode key="q2">/chain/status</DocCode>, 'Public Arc Testnet chain status.'],
+            [<DocCode key="q1">GET</DocCode>, <DocCode key="q2">/chain/status</DocCode>, 'Public Arc mainnet chain status.'],
           ]}
         />
         <p>
@@ -273,7 +273,7 @@ export default function Docs() {
     <DocLayout
       code="RVO-DOC-01"
       title="Documentation"
-      tagline="How the Revo Treasury platform works, end to end: identity, the agent workflow, custody of testnet funds, security controls, and the API underneath the console."
+      tagline="How the Revo Treasury platform works, end to end: identity, the agent workflow, custody of real funds, security controls, and the API underneath the console."
       status="CURRENT"
       sections={sections}
     />

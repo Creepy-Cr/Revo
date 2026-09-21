@@ -1,5 +1,4 @@
-import { Droplets, ArrowDownToLine, TerminalSquare, ArrowUpRight } from 'lucide-react';
-import { useWalletContext } from './wallet-context';
+import { ArrowDownToLine, TerminalSquare, ArrowUpRight } from 'lucide-react';
 
 /**
  * First-run experience: replaces the dead zero-state dashboard (NAV $0,
@@ -8,25 +7,23 @@ import { useWalletContext } from './wallet-context';
  * is funding it, so the overview says exactly that instead of graphing zeros.
  */
 export function TreasuryActivation({ onNavigate }: { onNavigate: (view: string) => void }) {
-  const { info } = useWalletContext();
-
   const steps = [
     {
       index: '01',
-      title: 'Get testnet USDC',
-      body: "Circle's faucet sends free Arc Testnet USDC straight to your wallet.",
-      meta: 'CIRCLE FAUCET · FREE · ~30 SEC',
-      action: info?.faucetUrl ? (
+      title: 'Get USDC on Arc',
+      body: 'Transfer real USDC to Arc mainnet from a supported exchange or bridge.',
+      meta: 'ARC MAINNET / REAL FUNDS',
+      action: (
         <a
-          href={info.faucetUrl}
+          href="https://arc-scan.org"
           target="_blank"
           rel="noreferrer"
-          data-testid="link-activation-faucet"
+          data-testid="link-activation-explorer"
           className="inline-flex items-center gap-2 px-5 py-3 text-[11px] font-mono uppercase tracking-[0.12em] font-bold text-white/90 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] rounded-[4px] transition-colors whitespace-nowrap"
         >
-          <Droplets className="w-3.5 h-3.5" /> OPEN FAUCET <ArrowUpRight className="w-3 h-3 text-white/40" />
+          ARC EXPLORER <ArrowUpRight className="w-3 h-3 text-white/40" />
         </a>
-      ) : null,
+      ),
       highlight: false,
     },
     {
@@ -83,7 +80,7 @@ export function TreasuryActivation({ onNavigate }: { onNavigate: (view: string) 
         </h2>
         <p className="mt-5 text-sm md:text-[15px] text-muted-foreground leading-relaxed max-w-xl">
           Nothing on this console is demo data; every number is computed from
-          real Arc Testnet deposits, so it all reads zero until your first
+          real Arc mainnet deposits, so it all reads zero until your first
           USDC lands in custody. Three steps and Arcus goes to work.
         </p>
       </div>
@@ -114,7 +111,7 @@ export function TreasuryActivation({ onNavigate }: { onNavigate: (view: string) 
 
       {/* Footer strip */}
       <div className="px-6 md:px-10 lg:px-12 py-4 border-t border-white/[0.08] bg-[#050505] text-[10px] font-mono uppercase tracking-[0.12em] text-white/30 leading-relaxed">
-        TESTNET FUNDS ONLY. DEPOSITS STAY WITHDRAWABLE, ARCUS NEVER MOVES CAPITAL WITHOUT YOUR MANDATE.
+        ARC MAINNET USES REAL FUNDS. DEPOSITS STAY WITHDRAWABLE, AND ARCUS ACTS ONLY WITHIN YOUR MANDATE.
       </div>
     </div>
   );

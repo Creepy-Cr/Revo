@@ -4,7 +4,7 @@ import { useArcWallet } from '@/hooks/use-arc-wallet';
 import { ConnectWalletModal } from '@/components/console/connect-wallet-modal';
 
 type WalletContextType = {
-  /** Public Arc Testnet chain facts - available BEFORE sign-in (the access
+  /** Public Arc chain facts - available BEFORE sign-in (the access
    *  gate needs them to detect and switch networks). The tenant-scoped
    *  custody address lives on the authed GET /treasury/wallet instead. */
   info: ChainParams | undefined;

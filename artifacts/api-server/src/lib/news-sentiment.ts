@@ -27,10 +27,9 @@ const FEED_TIMEOUT_MS = 8_000;
 
 /**
  * Assets the news pipeline buckets headlines for. These mirror the pinned Arc
- * token registry: BTC stands in for the cirBTC sleeve, whose only honest
- * reference is the real Bitcoin market.
+ * token registry.
  */
-export type NewsAsset = "BTC" | "EURC" | "USDC";
+export type NewsAsset = "EURC" | "USDC";
 
 export interface NewsSentiment extends LexiconScore {
   asset: NewsAsset;
@@ -45,7 +44,6 @@ export interface NewsSentiment extends LexiconScore {
  * European regulator story) would score noise as sentiment.
  */
 const PATTERNS: Record<NewsAsset, RegExp> = {
-  BTC: /\bbtc\b|bitcoin/i,
   EURC: /\beurc\b|euro coin|euro stablecoin|euro-backed/i,
   USDC: /\busdc\b|usd coin|stablecoin|\bcircle\b/i,
 };
@@ -100,7 +98,7 @@ async function fetchFeed(url: string): Promise<string[]> {
     signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
     headers: {
       Accept: "application/rss+xml, application/xml, text/xml, */*",
-      "User-Agent": "revo-treasury-testnet-simulator",
+      "User-Agent": "revo-treasury",
     },
   });
   if (!res.ok) {

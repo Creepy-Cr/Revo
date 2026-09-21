@@ -32,12 +32,11 @@ const SEEDED_DASHBOARD: TreasuryDashboard = {
   // status is the operating mode as the console badges it, so the mock shows
   // a label the real dashboard can actually return for the mode beside it.
   status: 'MANAGED',
-  network: 'Arc Testnet',
+  network: 'Arc',
   mode: 'managed',
   allocations: [
-    { symbol: 'USDC', name: 'Liquid reserve', percentage: 38.2, value: 1_087_705, units: 1_087_778, tone: 'cyan', source: 'onchain', tradable: true },
-    { symbol: 'EURC', name: 'Euro exposure', percentage: 35.0, value: 996_588, units: 859_128, tone: 'violet', source: 'onchain', tradable: true },
-    { symbol: 'cirBTC', name: 'Bitcoin exposure', percentage: 26.8, value: 763_101, units: 9.576228, tone: 'amber', source: 'onchain', tradable: false, untradableReason: 'The only Arc Testnet pool holds 0.59 cirBTC and prices it ~414% above spot, so Revo will not route an order in it.' },
+    { symbol: 'USDC', name: 'Liquid reserve', percentage: 38.2, value: 1_087_705, units: 1_087_705, tone: 'cyan', source: 'onchain', tradable: true },
+    { symbol: 'EURC', name: 'Euro exposure', percentage: 61.8, value: 1_759_689, units: 1_516_973, tone: 'violet', source: 'onchain', tradable: true },
   ],
   portfolioHistory: [],
   activities: [],
@@ -155,12 +154,12 @@ export function LiveProof() {
                     <h3 className="text-xl md:text-2xl font-display font-medium text-white tracking-tight">Treasury Console</h3>
                     <span className="h-4 w-px bg-white/10 hidden sm:block" />
                     <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-[0.15em] text-primary uppercase">
-                      <span className="w-1.5 h-1.5 bg-primary" /> TESTNET
+                       <span className="w-1.5 h-1.5 bg-primary" /> MAINNET
                     </span>
                   </div>
                   <div className="mt-2 flex items-center gap-4 text-[10px] font-mono tracking-[0.12em] uppercase tabular-nums">
                     <span className="flex items-center gap-1.5 text-green-400/90">
-                      <span className="w-1.5 h-1.5 bg-green-500" /> ARC TESTNET
+                       <span className="w-1.5 h-1.5 bg-green-500" /> ARC
                     </span>
                     <span className="text-white/40">#58,641,207</span>
                     <span className="h-3 w-px bg-white/10" />

@@ -11,8 +11,8 @@
  * the component is OMITTED - never served stale, never fabricated.
  *
  * Cost controls (X charges per tweet read, ~$0.005/post):
- *  - max_results=25 per asset per refresh (3 assets = 75 reads/refresh)
- *  - 12h success cache  -> 2 refreshes/day -> ~150 reads/day (~$23/month)
+ *  - max_results=25 per asset per refresh (2 assets = 50 reads/refresh)
+ *  - 12h success cache  -> 2 refreshes/day -> ~100 reads/day
  *  - per-asset single-flight dedup: concurrent callers share one request,
  *    so a cache expiry or cold start can never fan out into paid reads
  *  - 30min failure cooldown so errors never trigger retry storms
@@ -30,10 +30,9 @@ const MAX_RESULTS = 25; // per asset per refresh
 
 /**
  * Assets the sentiment pipeline follows. These mirror the pinned Arc token
- * registry: BTC stands in for the cirBTC sleeve, whose only honest reference
- * is the real Bitcoin market.
+ * registry.
  */
-export type XSentimentAsset = "BTC" | "EURC" | "USDC";
+export type XSentimentAsset = "EURC" | "USDC";
 
 export interface XSentiment {
   asset: XSentimentAsset;
@@ -47,7 +46,6 @@ export interface XSentiment {
 }
 
 const QUERIES: Record<XSentimentAsset, string> = {
-  BTC: '(bitcoin OR $btc) lang:en -is:retweet -is:reply',
   EURC: '(eurc OR "euro coin") lang:en -is:retweet -is:reply',
   USDC: '(usdc OR "usd coin") lang:en -is:retweet -is:reply',
 };
@@ -95,7 +93,7 @@ async function refreshSentiment(
       signal: AbortSignal.timeout(8_000),
       headers: {
         Authorization: `Bearer ${token}`,
-        "User-Agent": "revo-treasury-testnet-simulator",
+        "User-Agent": "revo-treasury",
       },
     });
     if (!res.ok) {

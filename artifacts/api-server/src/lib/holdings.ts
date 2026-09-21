@@ -1,5 +1,5 @@
 /**
- * Real custody holdings, read from Arc Testnet.
+ * Real custody holdings, read from Arc.
  *
  * The treasury's composition used to be four numbers in a database row -
  * USDC, aUSDC, sUSDC and ETH - valued at read time. Three of those were
@@ -13,8 +13,8 @@
  * the same to anything downstream.
  */
 
-import { createPublicClient, http, type PublicClient } from "viem";
-import { ARC_RPC_URL, arcTestnet, ensureTreasuryWallet } from "./arc-chain";
+import type { PublicClient } from "viem";
+import { arcPublicClient, ensureTreasuryWallet } from "./arc-chain";
 import { ARC_TOKENS, type ArcToken } from "./arc-tokens";
 import { fromBaseUnits } from "./tower";
 
@@ -28,20 +28,12 @@ const erc20Abi = [
   },
 ] as const;
 
-let client: PublicClient | null = null;
-
 function rpc(): PublicClient {
-  client ??= createPublicClient({
-    chain: arcTestnet,
-    transport: http(ARC_RPC_URL, { timeout: 12_000 }),
-  }) as PublicClient;
-  return client;
+  return arcPublicClient();
 }
 
-/** Test seam. Drops the cached RPC client. */
-export function resetHoldingsClient(): void {
-  client = null;
-}
+/** Test seam, kept for callers; the shared client owns its own lifecycle. */
+export function resetHoldingsClient(): void {}
 
 export interface Holding extends Pick<ArcToken, "symbol" | "name" | "decimals" | "role" | "tradable"> {
   address: string;
@@ -65,9 +57,8 @@ export interface CustodyHoldings {
 /**
  * Read every pinned Arc token's balance for a treasury's custody wallet.
  *
- * Untradable tokens are included on purpose. cirBTC cannot be traded here, but
- * if the treasury holds some it is still a real asset and hiding it would
- * understate the balance sheet.
+ * Every pinned token is included so the dashboard reflects the full custody
+ * wallet.
  */
 export async function readCustodyHoldings(
   treasuryId: string,

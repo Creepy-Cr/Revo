@@ -10,11 +10,11 @@ import {
   type Operator,
 } from "@workspace/db";
 import { verifyMessage, type Hex } from "viem";
-import { ARC_TESTNET_CHAIN_ID } from "./arc-chain";
+import { ARC_CHAIN_ID } from "./arc-chain";
 import { auditSafe } from "./audit";
 
 /**
- * Wallet-based operator authentication (SIWE-style, adapted to Arc Testnet).
+ * Wallet-based operator authentication (SIWE-style, adapted to Arc).
  *
  * Flow: the browser requests a short-lived single-use nonce for an address,
  * the wallet signs the exact server-issued message, and the server verifies
@@ -104,10 +104,10 @@ function buildLoginMessage(address: string, nonce: string, issuedAt: string, exp
     `${domain} wants you to sign in with your wallet:`,
     address,
     "",
-    "Revo Treasury operator login (Arc Testnet). This signature proves wallet ownership only; it authorizes no transfers.",
+    "Revo Treasury operator login (Arc). This signature proves wallet ownership only; it authorizes no transfers.",
     "",
     `URI: ${origin}`,
-    `Chain ID: ${ARC_TESTNET_CHAIN_ID}`,
+    `Chain ID: ${ARC_CHAIN_ID}`,
     `Nonce: ${nonce}`,
     `Issued At: ${issuedAt}`,
     `Expiration Time: ${expiresAt}`,

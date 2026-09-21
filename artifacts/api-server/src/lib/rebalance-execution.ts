@@ -5,14 +5,14 @@
  * current prices, and stop. Composition is read from the custody wallet, so
  * that combination produced a proposal reading `executed` beside a position
  * that had not moved. This module is the missing half: it turns an approved
- * target into a real Synthra swap signed by the treasury's own custody key.
+ * target into a real Uniswap v4 swap signed by the treasury's own custody key.
  *
  * The order of operations is the safety property, so it is fixed here rather
  * than left to callers:
  *
  *   1. Size the trade from the wallet's LIVE balances, never from the
  *      dashboard the proposal was drafted against.
- *   2. Quote it through `getSynthraQuote`, which refuses on measured price
+ *   2. Quote it through `getSwapQuote`, which refuses on measured price
  *      impact, deviation from the real market rate, and pool share. An
  *      untradable quote ends the attempt; nothing is signed.
  *   3. Simulate every transaction with `eth_call` first. A revert there costs
@@ -39,7 +39,6 @@
  */
 
 import type { Address, Hex } from "viem";
-import { encodeFunctionData } from "viem";
 import type { AllocationTarget } from "@workspace/db";
 import {
   ChainError,
@@ -64,9 +63,25 @@ import {
 import { ARC_TOKENS, type ArcToken } from "./arc-tokens";
 import { readCustodyHoldings, type Holding } from "./holdings";
 import { referencePriceFor, type MarketQuote } from "./market";
-import { SYNTHRA_ROUTER, getSynthraQuote, type SynthraQuote } from "./synthra";
+import {
+  PERMIT2,
+  SWAP_DEADLINE_SECONDS,
+  UNIVERSAL_ROUTER,
+  encodePermit2Approval,
+  encodeV4Swap,
+  getSwapQuote,
+  readPermit2Allowance,
+  type SwapQuote,
+} from "./uniswap-v4";
 import { fromBaseUnits, toBaseUnits } from "./tower";
 import { logger } from "./logger";
+import {
+  REBALANCE_SIGNED_AUDIT_ACTION,
+  assertFreshMarketQuote,
+  assertIssuerAllows,
+  assertRebalanceCaps,
+} from "./custody-policy";
+import { auditSafe, recordAudit } from "./audit";
 
 /**
  * Gas budget reserved before a USDC sale is sized. Arc settles gas in USDC
@@ -77,36 +92,6 @@ import { logger } from "./logger";
  */
 const GAS_BUDGET_UNITS = 400_000n;
 
-/**
- * Synthra's router is a SwapRouter02 fork: `exactInputSingle` takes no
- * deadline (confirmed by selector against the deployed bytecode - the
- * original v3 SwapRouter signature is absent). Getting this wrong would
- * decode into a different function entirely, so it is pinned rather than
- * assumed from the Uniswap version the fork descends from.
- */
-const swapRouterAbi = [
-  {
-    name: "exactInputSingle",
-    type: "function",
-    stateMutability: "payable",
-    inputs: [
-      {
-        type: "tuple",
-        name: "params",
-        components: [
-          { type: "address", name: "tokenIn" },
-          { type: "address", name: "tokenOut" },
-          { type: "uint24", name: "fee" },
-          { type: "address", name: "recipient" },
-          { type: "uint256", name: "amountIn" },
-          { type: "uint256", name: "amountOutMinimum" },
-          { type: "uint160", name: "sqrtPriceLimitX96" },
-        ],
-      },
-    ],
-    outputs: [{ type: "uint256", name: "amountOut" }],
-  },
-] as const;
 
 /** One line of the treasury's composition, read back after a swap settled. */
 export interface RealisedHolding {
@@ -229,7 +214,7 @@ type PlanResult =
   | { kind: "nothing-to-do"; reason: string }
   | { kind: "refused"; reason: string };
 
-/** Smallest trade Synthra's quoter can price meaningfully: 0.01 of a token. */
+/** Smallest trade the quoter can price meaningfully: 0.01 of a token. */
 function dustFloor(token: ArcToken): bigint {
   return token.decimals >= 2 ? 10n ** BigInt(token.decimals - 2) : 1n;
 }
@@ -353,7 +338,7 @@ async function planSwap(
   if (amountBaseUnits < dustFloor(sell.token)) {
     return {
       kind: "nothing-to-do",
-      reason: `The remaining drift is under 0.01 ${sell.symbol}, below the smallest amount Synthra can price, so no swap was sent.`,
+      reason: `The remaining drift is under 0.01 ${sell.symbol}, below the smallest amount the venue can price, so no swap was sent.`,
     };
   }
 
@@ -588,26 +573,6 @@ export async function readSettledOutcome(
   }
 }
 
-function encodeSwap(leg: SwapLeg, recipient: string, feeTier: number, minOut: bigint): Hex {
-  return encodeFunctionData({
-    abi: swapRouterAbi,
-    functionName: "exactInputSingle",
-    args: [
-      {
-        tokenIn: leg.input.address,
-        tokenOut: leg.output.address,
-        fee: feeTier,
-        recipient: recipient as Address,
-        amountIn: leg.amountBaseUnits,
-        amountOutMinimum: minOut,
-        // No price limit: `amountOutMinimum` is the protection, and it is
-        // derived locally from a measured spot quote rather than asked for.
-        sqrtPriceLimitX96: 0n,
-      },
-    ],
-  });
-}
-
 /**
  * What a rebalance's transactions cost the treasury in gas, in USDC.
  *
@@ -648,7 +613,7 @@ function classify(error: unknown, stage: string, txHash?: string): RebalanceOutc
  *
  * Never throws for an ordinary on-chain failure: the caller has to record the
  * cause and decide the proposal's status either way, and an unroutable pool or
- * a reverted swap is a normal outcome on a testnet, not an exception.
+ * a reverted swap is an ordinary outcome, not an exception.
  */
 export async function settleRebalance(
   treasuryId: string,
@@ -656,6 +621,19 @@ export async function settleRebalance(
   marketQuote: MarketQuote | null,
   claimBroadcast?: SwapBroadcastClaim,
 ): Promise<RebalanceOutcome> {
+  try {
+    assertFreshMarketQuote(marketQuote);
+  } catch (error) {
+    logger.error({ err: error, treasuryId }, "Rebalance refused by market price policy");
+    await auditSafe({
+      treasuryId,
+      action: "custody.rebalance",
+      actorRole: "system",
+      result: "refused",
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return classify(error, "checking the independent market price");
+  }
   let plan: PlanResult;
   try {
     plan = await planSwap(treasuryId, targets, marketQuote);
@@ -670,9 +648,9 @@ export async function settleRebalance(
   // pool never reaches a signer.
   const referenceIn = referencePriceFor(leg.input.coingeckoId, marketQuote);
   const referenceOut = referencePriceFor(leg.output.coingeckoId, marketQuote);
-  let quote: SynthraQuote;
+  let quote: SwapQuote;
   try {
-    quote = await getSynthraQuote({
+    quote = await getSwapQuote({
       inputSymbol: leg.input.symbol,
       outputSymbol: leg.output.symbol,
       amount: leg.amount,
@@ -683,10 +661,15 @@ export async function settleRebalance(
   } catch (error) {
     return classify(error, "quoting the swap");
   }
-  if (!quote.tradable || quote.minOutput === null || quote.feeTier === null) {
+  if (
+    !quote.tradable ||
+    quote.minOutput === null ||
+    quote.feeTier === null ||
+    quote.poolKey === null
+  ) {
     return {
       kind: "refused",
-      reason: `Synthra could not price a tradable ${leg.input.symbol} to ${leg.output.symbol} swap: ${quote.reason ?? "the route is not tradable"}`,
+      reason: `Uniswap v4 could not price a tradable ${leg.input.symbol} to ${leg.output.symbol} swap: ${quote.reason ?? "the route is not tradable"}`,
     };
   }
 
@@ -698,54 +681,121 @@ export async function settleRebalance(
     };
   }
   const feeTier = quote.feeTier;
+  const poolKey = quote.poolKey;
 
   const wallet = await ensureTreasuryWallet(treasuryId);
-  const swapData = encodeSwap(leg, wallet.address, feeTier, minOut);
 
   let approvalTxHash: Hex | undefined;
-  /** Kept for its gas: the approval is part of what this rebalance cost. */
-  let approvalReceipt: ConfirmedReceipt | undefined;
+  /** Kept for their gas: the approvals are part of what this rebalance cost. */
+  const approvalReceipts: ConfirmedReceipt[] = [];
   let swapHash: Hex | undefined;
   let claimLost = false;
+  let tradeUsd = 0;
+
+  /**
+   * Signs, broadcasts and waits for one preparatory transaction inside the
+   * custody lock. Each one has to be mined before the next step can be
+   * simulated truthfully, so they wait here rather than racing the swap.
+   */
+  const sendAndConfirm = async (
+    custodyTx: CustodyTransaction,
+    to: Address,
+    data: Hex,
+  ): Promise<void> => {
+    await simulateCustodyCall(wallet.address, to, data);
+    const signed = await signCustodyCall(wallet, to, data, custodyTx);
+    approvalTxHash = signed.hash;
+    await broadcastSignedTransfer(signed);
+    approvalReceipts.push(await confirmTransfer(signed.hash));
+  };
 
   try {
-    // Signing reads the pending nonce from the chain, so the approval and the
-    // swap must not interleave with any other custody send for this treasury.
+    // Signing reads the pending nonce from the chain, so the approvals and
+    // the swap must not interleave with any other custody send for this
+    // treasury.
     await withCustodyLock(treasuryId, async (custodyTx) => {
-      const allowance = await readAllowance(
-        leg.input.address,
-        wallet.address,
-        SYNTHRA_ROUTER,
-      );
-      if (allowance < leg.amountBaseUnits) {
-        // Exact-amount approval: the router keeps no standing permission over
-        // the treasury's balance beyond this one trade.
-        const approvalData = encodeApproval(SYNTHRA_ROUTER, leg.amountBaseUnits);
-        await simulateCustodyCall(wallet.address, leg.input.address, approvalData);
-        const signedApproval = await signCustodyCall(
-          wallet,
-          leg.input.address,
-          approvalData,
-          custodyTx,
+      const tradePrice = referencePriceFor(leg.input.coingeckoId, marketQuote);
+      if (tradePrice === undefined) {
+        throw new ChainError(
+          "REFUSED_BY_POLICY",
+          `A current independent ${leg.input.symbol} price is required before signing.`,
         );
-        approvalTxHash = signedApproval.hash;
-        await broadcastSignedTransfer(signedApproval);
-        // The approval has to be mined before the swap can be simulated
-        // truthfully, so this one waits inside the lock.
-        approvalReceipt = await confirmTransfer(signedApproval.hash);
+      }
+      tradeUsd = Number(leg.amount) * tradePrice;
+      await assertRebalanceCaps(treasuryId, tradeUsd, custodyTx);
+      await assertIssuerAllows(
+        leg.input.address,
+        wallet.address as Address,
+      );
+      await assertIssuerAllows(
+        leg.output.address,
+        wallet.address as Address,
+      );
+
+      // The router pulls the input through Permit2, so two exact-amount
+      // permissions are needed and neither outlives this trade: the token's
+      // allowance to Permit2, and Permit2's allowance to the router, which
+      // also expires with the swap deadline.
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const deadline = BigInt(nowSeconds + SWAP_DEADLINE_SECONDS);
+
+      // Exact means exact: an allowance left larger than this trade (by an
+      // earlier swap that never spent it) is rewritten down, not reused.
+      const tokenAllowance = await readAllowance(leg.input.address, wallet.address, PERMIT2);
+      if (tokenAllowance !== leg.amountBaseUnits) {
+        await sendAndConfirm(
+          custodyTx,
+          leg.input.address,
+          encodeApproval(PERMIT2, leg.amountBaseUnits),
+        );
       }
 
-      // Simulated with the allowance in place, against the real router, at
-      // the real size. A revert here blocks the send.
-      await simulateCustodyCall(wallet.address, SYNTHRA_ROUTER, swapData);
+      const permit = await readPermit2Allowance(wallet.address as Address, leg.input.address);
+      if (permit.amount !== leg.amountBaseUnits || BigInt(permit.expiration) <= deadline) {
+        await sendAndConfirm(
+          custodyTx,
+          PERMIT2,
+          encodePermit2Approval(leg.input.address, leg.amountBaseUnits, Number(deadline)),
+        );
+      }
 
-      const signedSwap = await signCustodyCall(wallet, SYNTHRA_ROUTER, swapData, custodyTx);
+      const swapData = encodeV4Swap({
+        key: poolKey,
+        input: leg.input.address,
+        output: leg.output.address,
+        amountIn: leg.amountBaseUnits,
+        minOut,
+        deadline,
+      });
+
+      // Simulated with the allowances in place, against the real router, at
+      // the real size. A revert here blocks the send.
+      await simulateCustodyCall(wallet.address, UNIVERSAL_ROUTER, swapData);
+
+      // The approvals above waited for confirmations. The independent price
+      // that justified this trade is checked again at the moment of signing,
+      // not only when settlement began.
+      assertFreshMarketQuote(marketQuote);
+
+      const signedSwap = await signCustodyCall(wallet, UNIVERSAL_ROUTER, swapData, custodyTx);
       if (claimBroadcast && !(await claimBroadcast(signedSwap.hash, custodyTx))) {
         // The caller's claim is gone, so this swap must not reach the
         // mempool: the signed payload is dropped with no nonce consumed.
         claimLost = true;
         return;
       }
+      // The value this swap commits is written to the audit chain before the
+      // mempool sees it, so the rolling cap counts it even if the receipt is
+      // never learned. A failed write stops the send: the claim then names a
+      // hash that never broadcast, which the reconciler resolves as missing.
+      await recordAudit({
+        treasuryId,
+        action: REBALANCE_SIGNED_AUDIT_ACTION,
+        actorRole: "system",
+        result: "ok",
+        reason: "Swap signed and claimed; broadcasting to Arc.",
+        detail: { txHash: signedSwap.hash, inputSymbol: leg.input.symbol, amountIn: leg.amount, tradeUsd },
+      });
       swapHash = signedSwap.hash;
       await broadcastSignedTransfer(signedSwap);
     });
@@ -765,6 +815,19 @@ export async function settleRebalance(
       { err: error, treasuryId, approvalTxHash, swapHash },
       "Rebalance swap did not settle",
     );
+    if (
+      error instanceof ChainError &&
+      (error.code === "REFUSED_BY_POLICY" || error.code === "PAUSED")
+    ) {
+      await auditSafe({
+        treasuryId,
+        action: "custody.rebalance",
+        actorRole: "system",
+        result: "refused",
+        reason: error.message,
+        detail: { inputSymbol: leg.input.symbol, amountIn: leg.amount },
+      });
+    }
     return outcome;
   }
 
@@ -819,6 +882,20 @@ export async function settleRebalance(
     expectedOutput: quote.expectedOutput ?? "0",
   });
 
+  await auditSafe({
+    treasuryId,
+    action: "custody.rebalance.executed",
+    actorRole: "system",
+    result: "ok",
+    reason: "The rebalance swap confirmed on Arc.",
+    detail: {
+      txHash: swapHash,
+      inputSymbol: leg.input.symbol,
+      amountIn: leg.amount,
+      tradeUsd,
+    },
+  });
+
   return {
     kind: "settled",
     settlement: {
@@ -832,9 +909,7 @@ export async function settleRebalance(
       feeTier,
       // Straight out of the receipts already in hand, so what the trading
       // itself took out of the treasury is on the record beside the fill.
-      gasCostUsdc: totalGasUsdc(
-        approvalTxHash ? [approvalReceipt, receipt] : [receipt],
-      ),
+      gasCostUsdc: totalGasUsdc([...approvalReceipts, receipt]),
       ...realised,
       ...(approvalTxHash ? { approvalTxHash } : {}),
     },

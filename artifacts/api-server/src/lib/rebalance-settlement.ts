@@ -137,11 +137,11 @@ function describeSettlement(settlement: SwapSettlement, action: string): string 
 
   if ((settlement.realisedOutput ?? null) === null) {
     parts.push(
-      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} on Synthra (${tier}) against a quote of ${settlement.expectedOutput} ${settlement.outputSymbol}, with a floor of ${settlement.minOutput} ${settlement.outputSymbol}.`,
+      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} on Uniswap v4 (${tier}) against a quote of ${settlement.expectedOutput} ${settlement.outputSymbol}, with a floor of ${settlement.minOutput} ${settlement.outputSymbol}.`,
     );
   } else {
     parts.push(
-      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} and received ${settlement.realisedOutput} ${settlement.outputSymbol} on Synthra (${tier}), against a quote of ${settlement.expectedOutput} and a floor of ${settlement.minOutput} ${settlement.outputSymbol}.`,
+      `Swapped ${settlement.amountIn} ${settlement.inputSymbol} and received ${settlement.realisedOutput} ${settlement.outputSymbol} on Uniswap v4 (${tier}), against a quote of ${settlement.expectedOutput} and a floor of ${settlement.minOutput} ${settlement.outputSymbol}.`,
     );
     if (realisedSlippagePct !== null) {
       const magnitude = Math.abs(realisedSlippagePct).toFixed(2);

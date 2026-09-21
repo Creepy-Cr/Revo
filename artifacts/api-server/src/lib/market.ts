@@ -10,17 +10,6 @@
 export interface MarketQuote {
   usdcUsd: number;
   /**
-   * Real-world BTC price. It sanity checks cirBTC swap quotes against a market
-   * rather than against the testnet pool that quotes them, and it is the
-   * reference the cirBTC signal is built on.
-   *
-   * Optional on purpose: CoinGecko occasionally omits an id. A missing BTC
-   * price degrades only the swap check and drops the cirBTC momentum
-   * component; it never takes down the dashboard.
-   */
-  btcUsd?: number;
-  btcChange24h?: number;
-  /**
    * Real-world EURC price. This is the reference the EURC swap path is checked
    * against, and the price positions are marked at, because the Arc pool rate
    * sits well above the real euro and marking to it would invent profit.
@@ -32,11 +21,9 @@ export interface MarketQuote {
 }
 
 const CACHE_TTL_MS = 60_000;
-// Only the ids something actually prices: the treasury holds USDC, EURC and
-// cirBTC on Arc and nothing else. ETH was quoted here for a stored price no
-// reader ever consumed, so it is no longer asked for.
+// Only the ids for assets the treasury can hold.
 const ENDPOINT =
-  "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin,bitcoin,euro-coin&vs_currencies=usd&include_24hr_change=true";
+  "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin,euro-coin&vs_currencies=usd&include_24hr_change=true";
 
 /** CoinGecko id to the `MarketQuote` field carrying its USD price. */
 export function referencePriceFor(coingeckoId: string, quote: MarketQuote | null): number | undefined {
@@ -44,8 +31,6 @@ export function referencePriceFor(coingeckoId: string, quote: MarketQuote | null
   switch (coingeckoId) {
     case "usd-coin":
       return quote.usdcUsd;
-    case "bitcoin":
-      return quote.btcUsd;
     case "euro-coin":
       return quote.eurUsd;
     default:
@@ -70,7 +55,6 @@ export async function getMarketQuote(): Promise<MarketQuote | null> {
     }
     const json = (await res.json()) as {
       "usd-coin"?: { usd?: number };
-      bitcoin?: { usd?: number; usd_24h_change?: number };
       "euro-coin"?: { usd?: number; usd_24h_change?: number };
     };
 
@@ -82,15 +66,11 @@ export async function getMarketQuote(): Promise<MarketQuote | null> {
       throw new Error("CoinGecko returned an incomplete quote");
     }
 
-    const btcUsd = json.bitcoin?.usd;
-    const btcChange24h = json.bitcoin?.usd_24h_change;
     const eurUsd = json["euro-coin"]?.usd;
     const eurChange24h = json["euro-coin"]?.usd_24h_change;
 
     cache = {
       usdcUsd,
-      ...(typeof btcUsd === "number" ? { btcUsd } : {}),
-      ...(typeof btcChange24h === "number" ? { btcChange24h } : {}),
       ...(typeof eurUsd === "number" ? { eurUsd } : {}),
       ...(typeof eurChange24h === "number" ? { eurChange24h } : {}),
       fetchedAt: Date.now(),

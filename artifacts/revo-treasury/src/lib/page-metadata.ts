@@ -19,40 +19,40 @@ export const PAGE_METADATA: Record<string, PageMetadata> = {
   '/': {
     title: 'Revo Treasury | Autonomous Treasury Intelligence',
     description:
-      'Guarded DAO treasury operations on Arc Testnet with live signals, deterministic policy controls, and Claude-powered intelligence.',
+      'Guarded DAO treasury operations on Arc mainnet with live signals, deterministic policy controls, and Claude-powered intelligence.',
     canonical: canonical('/'),
   },
   '/app': {
     title: 'Treasury Console | Revo',
     description:
-      'Operate a testnet treasury with wallet authentication, policy governance, security controls, and transparent activity.',
+      'Operate an Arc mainnet treasury with wallet authentication, policy governance, security controls, and transparent activity.',
   },
   '/dashboard': {
     title: 'Treasury Console | Revo',
     description:
-      'Operate a testnet treasury with wallet authentication, policy governance, security controls, and transparent activity.',
+      'Operate an Arc mainnet treasury with wallet authentication, policy governance, security controls, and transparent activity.',
   },
   '/docs': {
     title: 'Documentation | Revo Treasury',
     description:
-      'Understand Revo Treasury architecture, APIs, Arc Testnet custody, governance, and testnet-only safety boundaries.',
+      'Understand Revo Treasury architecture, APIs, Arc mainnet custody, governance, and security boundaries.',
     canonical: canonical('/docs'),
     schemaType: 'TechArticle',
   },
   '/privacy': {
     title: 'Privacy | Revo Treasury',
-    description: 'Privacy information for the Revo Treasury testnet application.',
+    description: 'Privacy information for the Revo Treasury Arc mainnet application.',
     canonical: canonical('/privacy'),
   },
   '/terms': {
     title: 'Terms | Revo Treasury',
-    description: 'Terms for using the Revo Treasury testnet application.',
+    description: 'Terms for using the Revo Treasury Arc mainnet application.',
     canonical: canonical('/terms'),
   },
   '/risk': {
     title: 'Risk Disclosure | Revo Treasury',
     description:
-      'Important risk and simulation disclosures for Revo Treasury on Arc Testnet.',
+      'Important risk disclosures for Revo Treasury on Arc mainnet.',
     canonical: canonical('/risk'),
   },
 };
@@ -97,7 +97,7 @@ export function createStructuredData(metadata: PageMetadata) {
         url: `${SITE_ORIGIN}/`,
         name: 'Revo Treasury',
         description:
-          'A testnet-only treasury command center for guarded DAO operations, explainable market signals, and policy governance.',
+          'An Arc mainnet treasury command center for guarded DAO operations, explainable market signals, and policy governance.',
         publisher: { '@id': organizationId },
         inLanguage: 'en',
       },

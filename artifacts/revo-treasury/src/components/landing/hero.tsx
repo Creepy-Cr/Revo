@@ -27,7 +27,7 @@ export function Hero() {
           className="text-lg md:text-xl text-white/85 max-w-2xl mb-12 leading-relaxed font-light tracking-tight [text-shadow:0_2px_20px_rgba(0,0,0,0.75),0_1px_4px_rgba(0,0,0,0.6)]"
         >
           Arcus, the Revo treasury agent, translates natural-language strategy into policy the server enforces.
-          Deposits and withdrawals settle on Arc Testnet, under hard guardrails.
+          Deposits, withdrawals, and Uniswap v4 swaps settle on Arc mainnet under hard guardrails.
         </motion.p>
 
         <motion.div

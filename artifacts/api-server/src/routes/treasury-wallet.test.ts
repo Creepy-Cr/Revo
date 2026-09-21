@@ -100,6 +100,44 @@ vi.mock("../lib/arc-chain", async (importOriginal) => {
   };
 });
 
+/**
+ * Circle's per-address controls, as the route would read them from Arc.
+ * Addresses in `blockedAddresses` are reported blacklisted; while
+ * `issuerRpcDown` is set every read fails the way an unreachable node does.
+ */
+const blockedAddresses = new Set<string>();
+let issuerRpcDown = false;
+
+vi.mock("../lib/custody-policy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/custody-policy")>();
+  const { ChainError } = await import("../lib/arc-chain");
+  const read = async (destination?: string) => {
+    if (issuerRpcDown) {
+      throw new ChainError("RPC_UNAVAILABLE", "test: issuer controls unreadable");
+    }
+    return {
+      tokenPaused: false,
+      walletBlacklisted: false,
+      destinationBlacklisted: destination ? blockedAddresses.has(destination.toLowerCase()) : false,
+    };
+  };
+  return {
+    ...actual,
+    isBlockedByIssuer: vi.fn(async (_token: string, _wallet: string, destination?: string) =>
+      read(destination),
+    ),
+    assertIssuerAllows: vi.fn(async (_token: string, _wallet: string, destination?: string) => {
+      const status = await read(destination);
+      if (status.destinationBlacklisted) {
+        throw new ChainError(
+          "REFUSED_BY_POLICY",
+          "The token issuer has blocked the withdrawal destination. Nothing was signed or sent.",
+        );
+      }
+    }),
+  };
+});
+
 // Keep the activity feed clean - tests must not surface fake entries in the UI.
 vi.mock("../lib/state", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/state")>();
@@ -529,6 +567,62 @@ describe("concurrent withdrawals", () => {
     expect(alerts).toHaveLength(1);
   });
 
+  it("refuses a withdrawal to an issuer-blocked destination as terminal, reserving nothing", async () => {
+    blockedAddresses.add(addressA);
+    try {
+      const unitsBefore = await treasuryUnits();
+      const res = await api("/treasury/wallet/withdrawals", {
+        method: "POST",
+        body: JSON.stringify(await signedWithdrawal(walletA, 1)),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/blocked the withdrawal destination/);
+      expect(await treasuryUnits()).toBeCloseTo(unitsBefore, 6);
+      const refusals = await db
+        .select()
+        .from(auditEventsTable)
+        .where(
+          and(
+            eq(auditEventsTable.treasuryId, TEST_TREASURY_ID),
+            eq(auditEventsTable.action, "wallet.withdrawal.request"),
+            eq(auditEventsTable.result, "refused"),
+          ),
+        );
+      expect(refusals).toHaveLength(1);
+      expect((refusals[0].detail as { terminal: boolean }).terminal).toBe(true);
+    } finally {
+      blockedAddresses.delete(addressA);
+    }
+  });
+
+  it("does not treat an unreadable issuer control as a refusal", async () => {
+    issuerRpcDown = true;
+    try {
+      const unitsBefore = await treasuryUnits();
+      const res = await api("/treasury/wallet/withdrawals", {
+        method: "POST",
+        body: JSON.stringify(await signedWithdrawal(walletA, 1)),
+      });
+      expect(res.status).toBe(503);
+      expect(await treasuryUnits()).toBeCloseTo(unitsBefore, 6);
+      const refusals = await db
+        .select()
+        .from(auditEventsTable)
+        .where(
+          and(
+            eq(auditEventsTable.treasuryId, TEST_TREASURY_ID),
+            eq(auditEventsTable.action, "wallet.withdrawal.request"),
+            eq(auditEventsTable.result, "refused"),
+          ),
+        );
+      // Only the terminal refusal from the blocked-destination case above.
+      expect(refusals).toHaveLength(1);
+    } finally {
+      issuerRpcDown = false;
+    }
+  });
+
   it("rejects tampered signatures (signed by a different wallet)", async () => {
     const issuedAt = new Date().toISOString();
     const signature = await walletB.signMessage({
@@ -539,5 +633,51 @@ describe("concurrent withdrawals", () => {
       body: JSON.stringify({ address: addressA, amountUsdc: 1, issuedAt, signature }),
     });
     expect(res.status).toBe(401);
+  });
+});
+
+// Runs last: it changes the ledger total the earlier absolute assertions rely on.
+describe("deposits from issuer-blocked senders", () => {
+  it("credits a deposit from an issuer-blocked sender and escalates it", async () => {
+    const blockedSender = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+    blockedAddresses.add(blockedSender);
+    try {
+      const txHash = randomHash();
+      depositFixtures.set(txHash, { from: blockedSender, microUsdc: 2_000_000n });
+      const unitsBefore = await treasuryUnits();
+      const res = await api("/treasury/wallet/deposits", {
+        method: "POST",
+        body: JSON.stringify({ txHash }),
+      });
+      // The USDC is already in custody, so the ledger must reflect it.
+      expect(res.status).toBe(201);
+      expect(await treasuryUnits()).toBeCloseTo(unitsBefore + 2, 6);
+      const alerts = await db
+        .select()
+        .from(alertsTable)
+        .where(
+          and(
+            eq(alertsTable.treasuryId, TEST_TREASURY_ID),
+            eq(alertsTable.kind, "custody.blocked-sender"),
+          ),
+        );
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0].severity).toBe("critical");
+      const claims = await db
+        .select()
+        .from(auditEventsTable)
+        .where(
+          and(
+            eq(auditEventsTable.treasuryId, TEST_TREASURY_ID),
+            eq(auditEventsTable.action, "wallet.deposit.claim"),
+          ),
+        );
+      const claim = claims.find(
+        (row) => (row.detail as { txHash?: string }).txHash === txHash,
+      );
+      expect((claim?.detail as { blockedSender: boolean }).blockedSender).toBe(true);
+    } finally {
+      blockedAddresses.delete(blockedSender);
+    }
   });
 });

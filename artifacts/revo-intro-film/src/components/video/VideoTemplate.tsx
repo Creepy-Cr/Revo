@@ -165,7 +165,7 @@ function Furniture({ sceneKey }: { sceneKey: SceneKey }) {
               transition={{ duration: 1.8, repeat: Infinity }}
             />
             <span style={{ fontFamily: FONT_MONO, fontSize: 15, letterSpacing: '0.26em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)' }}>
-              Arc Testnet
+              Arc
             </span>
           </span>
         </div>

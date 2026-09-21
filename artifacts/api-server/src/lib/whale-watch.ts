@@ -1,24 +1,18 @@
 /**
- * On-chain whale-flow monitoring - LIVE, free, straight from Arc Testnet RPC.
+ * On-chain whale-flow monitoring - LIVE, free, straight from Arc RPC.
  *
  * Scans recent blocks for large USDC ERC-20 Transfer events (USDC is Arc's
  * native asset exposed through an ERC-20 interface, 6 decimals). Everything
  * reported is a real observed on-chain event; when the RPC is unavailable
  * the whale signal is OMITTED - never fabricated, never served stale.
  *
- * Guards: chain-id verified on every refresh (locked to Arc Testnet),
+ * Guards: chain-id verified on every refresh (locked to Arc mainnet),
  * single-flight dedup, 10min success cache, 5min failure cooldown, and a
  * smaller fallback block window if the RPC rejects the primary range.
  */
 
-import { createPublicClient, http, parseAbiItem } from "viem";
-import {
-  ARC_RPC_URL,
-  ARC_TESTNET_CHAIN_ID,
-  USDC_ADDRESS,
-  arcTestnet,
-  fromMicroUsdc,
-} from "./arc-chain";
+import { parseAbiItem } from "viem";
+import { ARC_CHAIN_ID, USDC_ADDRESS, arcPublicClient, fromMicroUsdc } from "./arc-chain";
 
 const SUCCESS_TTL_MS = 10 * 60_000; // 10 minutes
 const FAILURE_COOLDOWN_MS = 5 * 60_000; // 5 minutes
@@ -35,10 +29,7 @@ const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 );
 
-const client = createPublicClient({
-  chain: arcTestnet,
-  transport: http(ARC_RPC_URL, { timeout: 10_000 }),
-});
+const client = arcPublicClient();
 
 export interface WhaleActivity {
   windowBlocks: number;
@@ -64,11 +55,11 @@ let primaryReprobeAt = 0;
 const PRIMARY_REPROBE_MS = 60 * 60_000; // 1 hour
 
 async function refreshWhaleActivity(): Promise<WhaleActivity> {
-  // Locked to Arc Testnet - verified per refresh, never cached.
+  // Locked to Arc - verified per refresh, never cached.
   const chainId = await client.getChainId();
-  if (chainId !== ARC_TESTNET_CHAIN_ID) {
+  if (chainId !== ARC_CHAIN_ID) {
     throw new Error(
-      `RPC reports chain ${chainId}, expected Arc Testnet ${ARC_TESTNET_CHAIN_ID}`,
+      `RPC reports chain ${chainId}, expected Arc ${ARC_CHAIN_ID}`,
     );
   }
 

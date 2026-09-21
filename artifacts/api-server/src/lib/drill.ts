@@ -117,7 +117,6 @@ interface DashboardLike {
 const SAFE_TARGETS: Record<string, number> = {
   USDC: 100,
   EURC: 0,
-  cirBTC: 0,
 };
 
 const lerp = (from: number, to: number, r: number) => from + (to - from) * r;
@@ -250,7 +249,7 @@ function drillActivities(runtime: DrillRuntime, elapsed: number) {
       time: iso(PROPOSAL_END_MS),
       title: "Rotating funds to the USDC reserve",
       detail:
-        "Unwinding the EURC sleeve back into USDC inside the guarded testnet drill. No live order is sent.",
+        "Unwinding the EURC sleeve back into USDC inside the guarded drill. No live order is sent.",
       status: secured ? "executed" : "processing",
       kind: "simulated",
     });
@@ -333,7 +332,7 @@ export function drillProposal(treasuryId: string) {
     safetyChecks: [
       "Emergency exit threshold (Risk 80+) breached. Auto-exit pre-authorized by DAO mandate",
       "Destination restricted to the whitelisted USDC reserve",
-      "Testnet drill only. No mainnet keys, no real funds moved",
+      "Drill only. No order is sent and no funds move",
     ],
     command: "SYSTEM DRILL: simulated protocol exploit response",
   };

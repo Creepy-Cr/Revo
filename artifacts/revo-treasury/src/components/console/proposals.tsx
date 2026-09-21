@@ -142,7 +142,6 @@ export function Proposals() {
             const assetColors: Record<string, string> = {
               'USDC': 'bg-primary',
               'EURC': 'bg-purple-500',
-              'CIRBTC': 'bg-amber-500',
             };
             const defaultAssetColor = 'bg-white/40';
 

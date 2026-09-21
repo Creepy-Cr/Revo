@@ -12,7 +12,7 @@ import {
   type TreasuryWalletInfo,
 } from '@workspace/api-client-react';
 import { createPublicClient, createWalletClient, custom, formatUnits, parseUnits, type Hex } from 'viem';
-import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, Copy, Check, Droplets, ShieldAlert } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, Copy, Check, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useWalletContext } from './wallet-context';
 import { useAuthContext } from './auth-context';
@@ -168,7 +168,7 @@ function ConnectedPanel({
             setDepositAmount('');
             toast({
               title: 'Deposit Credited',
-              description: `${transfer.amountUsdc} testnet USDC verified on-chain and added to the treasury.`,
+              description: `${transfer.amountUsdc} USDC verified on-chain and added to the treasury.`,
             });
             invalidate();
           },
@@ -176,7 +176,7 @@ function ConnectedPanel({
             setDepositPhase('idle');
             toast({
               title: 'Deposit Not Credited',
-              description: apiErrorMessage(error, 'The transaction could not be verified on Arc Testnet.'),
+              description: apiErrorMessage(error, 'The transaction could not be verified on Arc.'),
               variant: 'destructive',
             });
           },
@@ -208,7 +208,6 @@ function ConnectedPanel({
         address,
         formatUnits(micro, info.usdcDecimals),
         issuedAt,
-        info.chainId,
       );
       const walletClient = createWalletClient({ chain, transport: custom(provider) });
       signature = await walletClient.signMessage({ account: address as Hex, message });
@@ -233,14 +232,14 @@ function ConnectedPanel({
           setWithdrawAmount('');
           toast({
             title: 'Withdrawal Sent On-Chain',
-            description: `${transfer.amountUsdc} testnet USDC sent to your wallet (tx confirmed).`,
+            description: `${transfer.amountUsdc} USDC sent to your wallet (tx confirmed).`,
           });
           invalidate();
         },
         onError: (error) => {
           toast({
             title: 'Withdrawal Failed',
-            description: apiErrorMessage(error, 'The withdrawal could not be executed on Arc Testnet.'),
+            description: apiErrorMessage(error, 'The withdrawal could not be executed on Arc.'),
             variant: 'destructive',
           });
           invalidate();
@@ -345,11 +344,9 @@ function ConnectedPanel({
           {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           <span>TREASURY {shortAddress(info.treasuryAddress)}</span>
         </button>
-        {info.faucetUrl && (
-          <a href={info.faucetUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
-            <Droplets className="w-3.5 h-3.5" /> FAUCET
-          </a>
-        )}
+        <a href="https://arc-scan.org" target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
+          <ExternalLink className="w-3.5 h-3.5" /> ARC EXPLORER
+        </a>
       </div>
 
       {/* Recent transfers */}

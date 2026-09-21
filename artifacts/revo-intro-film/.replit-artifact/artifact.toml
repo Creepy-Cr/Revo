@@ -1,7 +1,7 @@
 kind = "video"
 previewPath = "/revo-intro-film/"
 title = "Revo Introduction Film"
-description = "A cinematic 16:9 introduction film for Revo, the AI-managed DAO treasury on Arc Testnet. Explains what Revo is and how it works: plain-English instructions compiled into enforced policies, guarded on-chain custody, deterministic guardrails, and operator control. Built for posting on X (Twitter)."
+description = "A cinematic 16:9 introduction film for Revo, the AI-managed DAO treasury on Arc mainnet. Explains what Revo is and how it works: plain-English instructions compiled into enforced policies, guarded on-chain custody, deterministic guardrails, and operator control. Built for posting on X (Twitter)."
 version = "1.0.0"
 id = "artifacts/revo-intro-film"
 router = "path"

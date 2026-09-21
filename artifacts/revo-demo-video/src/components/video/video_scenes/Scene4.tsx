@@ -122,7 +122,7 @@ export function Scene4() {
         </div>
         <div className="px-6 py-3 bg-primary/10 backdrop-blur-xl border border-primary/30 rounded-full font-mono text-sm tracking-widest uppercase text-primary shadow-[0_0_20px_rgba(252,59,0,0.2)] flex items-center gap-3">
           <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-          Arc Testnet
+          Arc
         </div>
       </motion.div>
     </div>

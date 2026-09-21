@@ -170,7 +170,7 @@ function ConsoleShell() {
                           <h1 className="text-xl md:text-2xl font-display font-medium text-white tracking-tight leading-tight">Treasury Console</h1>
                           <div className="hidden md:flex items-center gap-1.5 px-2 py-0.5 border-l border-yellow-500/30 text-[10px] font-mono font-bold tracking-[0.15em] text-yellow-500 uppercase ml-2">
                             <div className="w-1.5 h-1.5 bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-                            TESTNET
+                            MAINNET
                           </div>
                         </div>
                         <div className="shrink-0 scale-90 md:scale-100 origin-right">
@@ -181,11 +181,11 @@ function ConsoleShell() {
                       <div className="flex items-center gap-3 flex-wrap md:flex-nowrap pt-1 md:pt-0 border-t md:border-t-0 border-white/5 md:border-transparent">
                         <div className="md:hidden flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 text-[10px] font-mono font-bold tracking-[0.15em] text-yellow-500 uppercase">
                           <div className="w-1.5 h-1.5 bg-yellow-500 animate-pulse" />
-                          TESTNET
+                          MAINNET
                         </div>
                         <div className="flex items-center gap-2 px-1">
                           <div className={`w-1.5 h-1.5 ${chain?.connected ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'bg-red-400'}`} />
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-white/90">Arc Testnet</span>
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-white/90">Arc</span>
                           {chain?.connected && typeof chain.blockNumber === 'number' ? (
                             <span className="hidden sm:inline text-[10px] font-mono font-bold tracking-[0.1em] text-muted-foreground ml-1">#{chain.blockNumber.toLocaleString()}</span>
                           ) : chain && !chain.connected ? (

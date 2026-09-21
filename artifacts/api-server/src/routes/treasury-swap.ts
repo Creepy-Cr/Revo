@@ -9,18 +9,14 @@ import { llmGuard } from "../lib/llm-guard";
 import { ARC_TOKENS } from "../lib/arc-tokens";
 import { getMarketQuote, referencePriceFor } from "../lib/market";
 import { getTowerRegistry, isTowerConfigured } from "../lib/tower";
-import {
-  ARC_CHAIN_ID,
-  SYNTHRA_ROUTER,
-  checkSynthraVenue,
-  getSynthraQuote,
-} from "../lib/synthra";
+import { ARC_CHAIN_ID, ARC_CHAIN_NAME, ChainError } from "../lib/arc-chain";
+import { UNIVERSAL_ROUTER, VENUE, checkVenue, getSwapQuote } from "../lib/uniswap-v4";
 
 const router: IRouter = Router();
 
 /**
- * Quoting is rate-limited for the same reason policy compilation is: this API
- * is a public testnet demo and each call fans out to several RPC round trips.
+ * Quoting is rate-limited for the same reason policy compilation is: each
+ * call fans out to a dozen RPC round trips across the public Arc providers.
  * The guard is shared rather than reimplemented.
  */
 const quoteGuard = llmGuard({
@@ -37,29 +33,37 @@ const quoteGuard = llmGuard({
  * venue is down" apart from "this particular pair has no liquidity", and a
  * single quote endpoint conflates the two.
  *
- * Two different things are probed. Synthra's contracts on Arc are what a swap
- * would actually execute against, so their presence decides `swapEnabled`. The
- * Tower catalogue is a secondary cross-check on token addresses; losing it
- * degrades validation but does not stop a trade, so it does not gate here.
+ * Two different things are probed. Uniswap v4's contracts on Arc and a live
+ * USDC/EURC pool are what a swap would actually execute against, so they
+ * decide `swapEnabled`. The Tower catalogue is a secondary cross-check on
+ * token addresses; losing it degrades validation but does not stop a trade,
+ * so it does not gate here.
  */
 router.get("/treasury/swap/venue", requireOperator(), async (_req, res): Promise<void> => {
   const configured = isTowerConfigured();
-  const [registry, synthra] = await Promise.all([
+  const [registry, venue] = await Promise.all([
     configured
       ? getTowerRegistry()
       : Promise.resolve({ available: false, arcSupportsSwaps: false, error: undefined }),
-    checkSynthraVenue(),
+    checkVenue(),
   ]);
 
   const contractsDeployed =
-    synthra.factoryDeployed && synthra.quoterDeployed && synthra.routerDeployed;
-  const swapEnabled = synthra.reachable && contractsDeployed;
+    venue.poolManagerDeployed &&
+    venue.quoterDeployed &&
+    venue.routerDeployed &&
+    venue.permit2Deployed;
+  const poolLive = venue.livePools.length > 0;
+  const swapEnabled = venue.reachable && contractsDeployed && poolLive;
 
   let reason: string | undefined;
-  if (!synthra.reachable) {
-    reason = synthra.error ?? "Arc RPC is unreachable, so no swap can be quoted or signed";
+  if (!venue.reachable) {
+    reason = venue.error ?? "Arc RPC is unreachable, so no swap can be quoted or signed";
   } else if (!contractsDeployed) {
-    reason = "The Synthra factory, quoter or router is not deployed at the pinned address on Arc";
+    reason =
+      "The Uniswap v4 PoolManager, quoter, router or Permit2 is not deployed at the pinned address on Arc";
+  } else if (!poolLive) {
+    reason = "No USDC/EURC pool on Uniswap v4 currently has in-range liquidity";
   } else if (!configured) {
     reason =
       "Swaps are live, but no venue-catalogue credentials are configured so token addresses cannot be cross-checked";
@@ -69,16 +73,17 @@ router.get("/treasury/swap/venue", requireOperator(), async (_req, res): Promise
 
   res.json(
     GetTreasurySwapVenueResponse.parse({
-      venue: "synthra",
+      venue: VENUE,
       chainId: ARC_CHAIN_ID,
-      network: "Arc Testnet",
-      routerAddress: SYNTHRA_ROUTER,
+      network: ARC_CHAIN_NAME,
+      routerAddress: UNIVERSAL_ROUTER,
       configured,
       registryAvailable: registry.available,
       arcSupportsSwaps: registry.arcSupportsSwaps,
-      rpcReachable: synthra.reachable,
+      rpcReachable: venue.reachable,
       contractsDeployed,
-      blockNumber: synthra.blockNumber,
+      blockNumber: venue.blockNumber,
+      livePools: venue.livePools,
       swapEnabled,
       tokens: Object.values(ARC_TOKENS).map((token) => ({
         symbol: token.symbol,
@@ -124,14 +129,24 @@ router.post(
     const inputUsd = inputId ? referencePriceFor(inputId, market) : undefined;
     const outputUsd = outputId ? referencePriceFor(outputId, market) : undefined;
 
-    const quote = await getSynthraQuote({
-      inputSymbol,
-      outputSymbol,
-      amount,
-      ...(inputUsd !== undefined && outputUsd !== undefined
-        ? { referenceUsd: { input: inputUsd, output: outputUsd } }
-        : {}),
-    });
+    let quote;
+    try {
+      quote = await getSwapQuote({
+        inputSymbol,
+        outputSymbol,
+        amount,
+        ...(inputUsd !== undefined && outputUsd !== undefined
+          ? { referenceUsd: { input: inputUsd, output: outputUsd } }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof ChainError && error.code === "RPC_UNAVAILABLE") {
+        req.log.warn({ err: error, inputSymbol, outputSymbol }, "Swap quote unavailable: Arc RPC failed");
+        res.status(503).json({ error: "Arc RPC is temporarily unavailable, so the swap could not be priced. Try again shortly." });
+        return;
+      }
+      throw error;
+    }
 
     if (!quote.tradable) {
       req.log.info(

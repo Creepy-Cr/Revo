@@ -21,7 +21,7 @@ import {
 const TX_HASH = '0x7f3a9c04e1b2d8f6a5c3e9b7d1f0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b2d4c21e';
 const GREEN = '#3ddc84';
 
-// Step 03. A rebalance leaves as a real swap on Arc Testnet and comes back
+// Step 03. A rebalance leaves as a real swap on Arc and comes back
 // as a receipt.
 export function Scene4() {
   const quoted = useBeat(1800);
@@ -32,7 +32,7 @@ export function Scene4() {
   const fill = useCountUp(22831.24, 6500, 1100, 0);
 
   const steps = [
-    { label: 'Quoted', on: quoted, detail: '0.91346 EURC per USDC · Synthra pool' },
+    { label: 'Quoted', on: quoted, detail: '0.91346 EURC per USDC · Uniswap v4 pool' },
     { label: 'Broadcast', on: broadcast, detail: hash.shown ? hash.shown.slice(0, 22) + (hash.done ? '…' + TX_HASH.slice(-6) : '') : '' },
     { label: 'Confirmed', on: confirmed, detail: 'block 18,204,553 · transfer logs read' },
   ];
@@ -53,7 +53,7 @@ export function Scene4() {
         </h2>
         <div style={{ height: 36 }} />
         <Body delay={2.1} size={31} width={700}>
-          Executed on Arc Testnet through Synthra. The filled amount is read from the confirmed transfer logs,
+          Executed on Arc through Uniswap v4. The filled amount is read from the confirmed transfer logs,
           never from an estimate.
         </Body>
         <motion.div
@@ -72,7 +72,7 @@ export function Scene4() {
       <Panel delay={1.0} from="right" width={800} style={{ position: 'absolute', left: 960, top: 150, padding: '32px 40px 34px' }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 26 }}>
           <Mono size={16}>Rebalance · USDC → EURC</Mono>
-          <Mono size={16} color="rgba(255,255,255,0.7)">venue · Synthra · Arc Testnet</Mono>
+          <Mono size={16} color="rgba(255,255,255,0.7)">venue · Uniswap v4 · Arc</Mono>
         </div>
 
         <div className="flex items-center" style={{ gap: 20 }}>

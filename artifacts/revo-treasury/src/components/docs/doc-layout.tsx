@@ -159,7 +159,7 @@ export function DocLayout({
             {/* Issue block */}
             <div className="mt-16 pt-6 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <p className="text-[10px] font-mono tracking-[0.2em] text-white/30 uppercase tabular-nums">
-                Issued by Revo Core Technologies · Arc Testnet · Chain 5042002
+                Issued by Revo Core Technologies · Arc mainnet · Chain 5042
               </p>
               <p className="text-[10px] font-mono tracking-[0.2em] text-white/30 uppercase tabular-nums">
                 {code} · {effective}

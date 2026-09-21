@@ -432,7 +432,7 @@ describe("approving a proposal", () => {
     const id = await seedProposal();
     settleRebalance.mockResolvedValue({
       kind: "refused",
-      reason: "Synthra could not price a tradable USDC to EURC swap, so nothing was signed.",
+      reason: "Uniswap v4 could not price a tradable USDC to EURC swap, so nothing was signed.",
     });
 
     expect((await approve(id)).status).toBe(200);
@@ -492,7 +492,7 @@ describe("approving a policy in autonomous mode", () => {
     const policyId = await seedPolicyDraft();
     settleRebalance.mockResolvedValue({
       kind: "refused",
-      reason: "Synthra could not price a tradable USDC to EURC swap, so nothing was signed.",
+      reason: "Uniswap v4 could not price a tradable USDC to EURC swap, so nothing was signed.",
     });
 
     const response = await api(`/treasury/policies/${policyId}/approve`, { method: "POST" });
@@ -601,7 +601,7 @@ describe("replacing an active policy", () => {
       await settling.promise;
       return {
         kind: "refused",
-        reason: "Synthra could not price a tradable USDC to EURC swap, so nothing was signed.",
+        reason: "Uniswap v4 could not price a tradable USDC to EURC swap, so nothing was signed.",
       };
     });
     expect((await approve(drafted.id)).status).toBe(200);

@@ -1,8 +1,8 @@
 # Security Policy
 
-Revo holds testnet USDC in per-treasury custody wallets and signs transactions on an
-operator's behalf. Even on testnet we treat custody, authorisation and money-movement bugs as
-security issues and want to hear about them privately first.
+Revo holds real USDC and EURC on Arc mainnet in per-treasury custody wallets and signs
+transactions on an operator's behalf. Custody, authorisation and money-movement bugs are
+security issues and we want to hear about them privately first.
 
 ## Scope
 
@@ -17,7 +17,7 @@ Anything in this repository, in particular:
 - The background workers and their leader lease
 - The public site and console (XSS, CSRF, information leaks)
 
-Out of scope: issues in Arc, Circle, Synthra, Tower or Anthropic themselves (report those
+Out of scope: issues in Arc, Circle, Uniswap, Tower or Anthropic themselves (report those
 upstream), rate limiting of the public marketing pages, and findings that require a compromised
 operator device or browser extension.
 

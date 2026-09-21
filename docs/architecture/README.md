@@ -1,7 +1,8 @@
 # Revo system architecture
 
-Autonomous treasury intelligence built on **Arc Testnet** (chain id `5042002`), settling in
-native USDC (`0x3600000000000000000000000000000000000000`, 6 decimals) with gas paid in USDC.
+Autonomous treasury intelligence built on **Arc mainnet** (chain id `5042`), settling in
+USDC (`0x3600000000000000000000000000000000000000`, 6 decimals) and EURC
+(`0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`, 6 decimals), with gas paid in USDC.
 
 ![Revo architecture](./revo-architecture.png)
 
@@ -17,12 +18,11 @@ answers.
 
 | Capability | Status |
 | --- | --- |
-| USDC deposits to the treasury | Real Arc Testnet transactions, credited at 12 confirmations |
-| USDC withdrawals from the treasury | Real Arc Testnet transactions, signed by the custody key |
-| Deposit indexing, confirmations, reorg rewind | Real, against Arc Testnet logs |
+| USDC deposits to the treasury | Real Arc mainnet transactions, credited at 12 confirmations |
+| USDC withdrawals from the treasury | Real Arc mainnet transactions, signed by the custody key |
+| Deposit indexing, confirmations, reorg rewind | Real, against Arc mainnet logs |
 | Withdrawal reconciliation and refunds | Real |
-| Rebalance between the USDC and EURC sleeves | Real swaps on Arc through Synthra, confirmed from receipts |
-| cirBTC | Held and valued, never routed (no tradable liquidity on Arc Testnet) |
+| Rebalance between the USDC and EURC sleeves | Real swaps on Arc through Uniswap v4, confirmed from receipts |
 | Circle Gateway unified balance | Real read through Circle App Kit; a Gateway balance is not a wallet balance |
 | Emergency drill | Explicitly simulated; it overlays the dashboard and never touches funds |
 | Market, social and on-chain signals | Read-only inputs to the risk score and to Arcus, never a trigger for execution |
@@ -55,17 +55,17 @@ flowchart TB
     COMP["Arcus policy compiler<br/>Claude, natural language to draft policy"]:::plain
     QA["Arcus grounded Q and A<br/>no execution authority"]:::plain
     ENG["Deterministic policy engine<br/>allocation 5-35%, reserve 25-80%, drawdown 5-30%"]:::real
-    PLAN["Rebalance plan<br/>USDC and EURC sleeve, cirBTC held not routed"]:::plain
+    PLAN["Rebalance plan<br/>USDC and EURC sleeves"]:::plain
     PROP["Proposal lifecycle<br/>pending, approved, settling, executed"]:::plain
     MODE["Operating mode<br/>Safe, Managed or Autonomous"]:::plain
     COMP --> ENG --> PLAN --> PROP --> MODE
   end
 
-  subgraph SET["03 Settlement plane (Arc Testnet, real on-chain)"]
+  subgraph SET["03 Settlement plane (Arc mainnet, real on-chain)"]
     direction TB
     DEP["Deposit: user wallet, USDC transfer,<br/>log verify at 12 confirmations, idempotent credit"]:::real
     WDR["Withdraw: EIP-191 destination auth, balance reserve,<br/>pause re-check under lock, EIP-1559 signing, broadcast, reconcile"]:::real
-    REB["Rebalance: Synthra quote, simulate, approve and swap,<br/>hash persisted before broadcast, realised fill from receipt"]:::real
+    REB["Rebalance: Uniswap v4 quote, preflight, approve and swap,<br/>hash persisted before broadcast, realised fill from receipt"]:::real
   end
 
   subgraph WRK["04 Durable workers (single leader, lease and fencing)"]
@@ -128,17 +128,29 @@ Solid edges are real transactions or decision paths. Dashed edges are read-only 
   unsealed in memory only for the duration of one signing call and never persisted in
   plaintext. JavaScript offers no zeroisation guarantee, so this is scope-limited in-memory use
   rather than cryptographic erasure.
-- The chain guard rejects any `chainId` other than `5042002` before every read and broadcast.
+- The chain guard rejects any `chainId` other than `5042` before every read and broadcast.
 - Deposits are indexed from USDC transfer logs, credited once at 12 confirmations, and rewound
   on reorg. The indexer backfills up to 5000 blocks on a cold start.
 - Withdrawals reserve balance under the custody lock, re-read the emergency pause under that
   same lock immediately before signing, sign an EIP-1559 transaction locally and broadcast.
   The reconciler confirms or refunds from receipts.
-- Rebalances are quoted on Synthra and every transaction is simulated with `eth_call` before it
-  is sent. An operator approval triggers settlement in the same request: the token allowance
-  first, then the router swap. The swap's transaction hash is persisted before broadcast so a
+- Rebalances use the live Uniswap v4 USDC/EURC 0.05% pool (`fee 500`, `tickSpacing 10`) and
+  every transaction is preflighted with `eth_call` before it is sent. The integration uses
+  PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`, V4Quoter
+  `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`, StateView
+  `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b`, UniversalRouter
+  `0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1` and Permit2
+  `0x000000000022D473030F116dDEE9F6B43aC78BA3`. An operator approval triggers settlement in
+  the same request. The swap's transaction hash is persisted before broadcast so a
   crash cannot orphan it, and the realised fill is read from the receipt's transfer logs rather
   than from a balance delta. Gas comes out of the USDC balance being sent.
+- The signer allowlist permits only USDC and EURC transfers and approvals, Permit2 approvals and
+  UniversalRouter execution. Permit2 approvals are for the exact amount and expire with the swap.
+- Every swap enforces a 1% maximum price impact, 2% maximum reference-price deviation, 30 bps
+  slippage, at most 10% of the pool's 2% depth and a 180 second deadline. Stale prices are refused.
+- The emergency pause is re-checked at signing. Circle blocklist and token pause status are
+  checked before signing. Rebalances are also subject to absolute USD caps per trade and per day.
+- Ledger balances are reconciled with chain balances, and any shortfall activates the pause.
 - Withdrawal caps default to 25k per transaction, 50k per wallet per rolling 24 h and 100k
   global per rolling 24 h, and are admin-configurable.
 - The emergency pause blocks withdrawals, policy and proposal approvals and autonomous
@@ -183,8 +195,8 @@ and production. In production the router sends `/api` to the API process (health
 
 | Dependency | Used for | Failure behaviour |
 | --- | --- | --- |
-| Arc Testnet RPC | Every read and broadcast | Reads that fail are reported as unknown, never as zero; the valuation is marked incomplete |
-| Synthra (router, quoter, pools) | Rebalance quotes, simulation and swaps | Swap venue reported as unavailable; proposals wait |
+| Arc mainnet RPC providers | Every read and broadcast, with automatic failover and optional `ARC_RPC_URLS` override | Reads that fail are reported as unknown, never as zero; the valuation is marked incomplete |
+| Uniswap v4 on Arc | Rebalance quotes, transaction preflight and swaps | Swap venue reported as unavailable; proposals wait |
 | Tower Exchange public API | Token registry cross-check when `TOWER_API_KEY` is set | Optional; validation degrades, trades are unaffected |
 | Circle Gateway via App Kit | Unified balance read | Panel shows unreachable, never an empty balance |
 | Anthropic API | Arcus compilation and Q and A | Commands fail loudly; nothing is executed without a compiled policy |

@@ -11,13 +11,13 @@ import {
 import { getMarketQuote, referencePriceFor, type MarketQuote } from "./market";
 import { readCustodyHoldings } from "./holdings";
 import { tradableTokens } from "./arc-tokens";
-import { ARC_TESTNET_CHAIN_NAME, EXPLORER_URL } from "./arc-chain";
+import { ARC_CHAIN_NAME, EXPLORER_URL } from "./arc-chain";
 import { getMode, MODE_LABEL, type OperatingMode } from "./operating-mode";
 
 /**
  * Treasury state.
  *
- * Composition is read from the custody wallet on Arc Testnet - the tokens the
+ * Composition is read from the custody wallet on Arc - the tokens the
  * treasury actually holds - and priced at read time from live market quotes.
  * NAV snapshots accumulate in the database and the activity log records real
  * events. Nothing served from the dashboard is hardcoded, and no allocation row
@@ -28,13 +28,11 @@ import { getMode, MODE_LABEL, type OperatingMode } from "./operating-mode";
 const ALLOCATION_LABELS: Record<string, string> = {
   USDC: "Liquid reserve",
   EURC: "Euro exposure",
-  cirBTC: "Bitcoin exposure",
 };
 
 const ALLOCATION_TONES: Record<string, string> = {
   USDC: "cyan",
   EURC: "violet",
-  cirBTC: "amber",
 };
 
 const SNAPSHOT_THROTTLE_MS = 5 * 60_000;
@@ -46,12 +44,12 @@ export const GUARDRAILS = [
   { id: "g-1", label: "Max protocol exposure", value: "35%", state: "active" },
   { id: "g-2", label: "Minimum liquid reserve", value: "25%", state: "active" },
   { id: "g-3", label: "Emergency exit threshold", value: "Risk 80+", state: "armed" },
-  { id: "g-4", label: "Execution environment", value: "Testnet only", state: "locked" },
+  { id: "g-4", label: "Execution environment", value: "Arc mainnet, Uniswap v4 only", state: "locked" },
 ];
 
 /**
  * How an activity row relates to real money movement.
- *   - "onchain"   a real Arc Testnet transaction settled
+ *   - "onchain"   a real Arc transaction settled
  *   - "simulated" internal accounting only; no protocol swap, no transaction
  *   - "system"    governance/control event that moves no funds at all
  */
@@ -92,7 +90,7 @@ async function initializeState(
   signal?: AbortSignal,
 ): Promise<TreasuryState> {
   // Real mode: the treasury opens EMPTY. Holdings only ever change through
-  // real on-chain testnet USDC deposits/withdrawals (wallet routes) and
+  // real on-chain USDC deposits/withdrawals (wallet routes) and
   // approved rebalances of those funds. The live quote is still required so
   // the stored last-known USDC price is real from the very first row.
   signal?.throwIfAborted();
@@ -111,7 +109,7 @@ async function initializeState(
     await logActivity(
       treasuryId,
       "Treasury initialized",
-      "Treasury opened empty on Arc Testnet. Every balance shown from here on comes from real on-chain testnet USDC deposits.",
+      "Treasury opened empty on Arc mainnet. Every balance shown from here on comes from real on-chain USDC and EURC holdings.",
       "executed",
     );
     return state;
@@ -348,7 +346,7 @@ export async function computeDashboard(
     riskScore,
     mode,
     status: MODE_LABEL[mode],
-    network: ARC_TESTNET_CHAIN_NAME,
+    network: ARC_CHAIN_NAME,
     allocations,
     portfolioHistory: history.map((snap) => ({
       label: snap.time.toISOString(),
@@ -393,9 +391,8 @@ async function maybeSnapshot(
 export type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
- * Symbols a rebalance may name. Only assets Revo can actually route on Arc
- * Testnet qualify - cirBTC is held and priced but has no tradable liquidity, so
- * a policy may never target it.
+ * Symbols a rebalance may name. Only assets Revo can route through Uniswap v4
+ * on Arc mainnet qualify.
  */
 const REBALANCE_SYMBOLS = tradableTokens().map((t) => t.symbol);
 

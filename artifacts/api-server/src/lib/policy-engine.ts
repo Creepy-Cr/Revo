@@ -54,10 +54,8 @@ export function normalizeRules(raw: {
 }
 
 /**
- * Size of the directional sleeve by risk tolerance. On Arc Testnet the only
- * risk asset Revo can actually route is EURC - cirBTC is priced and held but
- * has no tradable liquidity - so the sleeve is expressed in EURC rather than in
- * a yield vault that does not exist here.
+ * Size of the directional sleeve by risk tolerance. EURC is the only
+ * directional asset in the treasury, so the sleeve is expressed in EURC.
  */
 const RISK_SLEEVE_BY_RISK: Record<PolicyRules["riskTolerance"], number> = {
   low: 4,

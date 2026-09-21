@@ -6,12 +6,11 @@ import {
   treasuryStateTable,
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
-import { createPublicClient, http, parseAbiItem, type Address } from "viem";
+import { parseAbiItem, type Address } from "viem";
 import {
-  ARC_RPC_URL,
-  ARC_TESTNET_CHAIN_ID,
+  ARC_CHAIN_ID,
   USDC_ADDRESS,
-  arcTestnet,
+  arcPublicClient,
   ensureTreasuryWallet,
   fromMicroUsdc,
 } from "../arc-chain";
@@ -22,7 +21,7 @@ import { loadState, logActivity } from "../state";
 import { assertWorkerLease, getCheckpoint, setCheckpoint, type WorkerJob } from "./index";
 
 /**
- * Background deposit indexer: scans Arc Testnet USDC Transfer logs addressed
+ * Background deposit indexer: scans Arc USDC Transfer logs addressed
  * to the treasury wallet and credits them durably - so a deposit is never
  * lost just because the depositor's browser closed before the claim step.
  *
@@ -42,7 +41,7 @@ const MAX_BLOCKS_PER_RUN = 900n;
 const CONFIRMATIONS = 12n;
 /** First run scans this much recent history so deposits made while the
  *  service was down are still credited automatically. */
-const BACKFILL_BLOCKS = 5000n;
+const BACKFILL_BLOCKS = 3600n;
 /** How far to rewind when the checkpoint block's hash no longer matches the
  *  canonical chain (reorg). Rescans are safe: credits are idempotent. */
 const REORG_REWIND_BLOCKS = 200n;
@@ -51,10 +50,7 @@ const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 );
 
-const client = createPublicClient({
-  chain: arcTestnet,
-  transport: http(ARC_RPC_URL, { timeout: 10_000 }),
-});
+const client = arcPublicClient();
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -83,8 +79,8 @@ async function processTreasury(treasuryId: string, signal: AbortSignal): Promise
 
   // Chain-id guard: asserted per run, never cached.
   const chainId = await client.getChainId();
-  if (chainId !== ARC_TESTNET_CHAIN_ID) {
-    throw new Error(`RPC chain id ${chainId} is not Arc Testnet (${ARC_TESTNET_CHAIN_ID})`);
+  if (chainId !== ARC_CHAIN_ID) {
+    throw new Error(`RPC chain id ${chainId} is not Arc mainnet (${ARC_CHAIN_ID})`);
   }
 
   const latest = await client.getBlockNumber();
@@ -141,6 +137,11 @@ async function processTreasury(treasuryId: string, signal: AbortSignal): Promise
     const txHash = log.transactionHash.toLowerCase();
     if (!sender || micro <= 0n) continue;
     if (sender === treasuryAddress) continue; // treasury self-transfers are not deposits
+    // A rebalance swap pays its USDC output into custody from the pool. That
+    // transaction was sent by the custody wallet itself, which no external
+    // deposit ever is, so the sender of the transaction decides.
+    const receipt = await client.getTransactionReceipt({ hash: log.transactionHash });
+    if (receipt.from.toLowerCase() === treasuryAddress) continue;
 
     const amountUsdc = fromMicroUsdc(micro);
     assertWorkerLease(signal);
@@ -180,7 +181,7 @@ async function processTreasury(treasuryId: string, signal: AbortSignal): Promise
       await logActivity(
         treasuryId,
         "On-chain deposit received",
-        `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} testnet USDC deposited from ${sender} (auto-indexed on Arc Testnet, tx ${txHash.slice(0, 10)}…). Credited to the liquid reserve.`,
+        `${amountUsdc.toLocaleString("en-US", { maximumFractionDigits: 6 })} USDC deposited from ${sender} (auto-indexed on Arc, tx ${txHash.slice(0, 10)}…). Credited to the liquid reserve.`,
         "executed",
         "onchain",
       );

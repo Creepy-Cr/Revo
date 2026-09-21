@@ -1,9 +1,15 @@
 /**
- * Token identities Revo pins for itself on Arc Testnet.
+ * Token identities Revo pins for itself on Arc mainnet (chain 5042).
  *
  * Venue registries are consulted at runtime but checked against these rather
  * than trusted. An address that changes underneath us is a reason to stop
  * trading, not a reason to follow it to a new contract.
+ *
+ * The set is deliberately small: USDC (the reserve and the gas asset) and
+ * Circle's EURC, the one pair with measured Uniswap v4 depth on mainnet. Any
+ * further token must pass the same pool depth and reference price checks on
+ * mainnet before it is added here, and must then be added to every other
+ * place the token set is restated (OpenAPI enums, the web console, prompts).
  *
  * `tradable` is a Revo decision, not a venue capability. A venue will happily
  * quote a pool that is technically executable and economically nonsense; this
@@ -43,27 +49,12 @@ export const ARC_TOKENS: Record<string, ArcToken> = {
   },
   EURC: {
     symbol: "EURC",
-    address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+    address: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
     decimals: 6,
     role: "risk",
     name: "Euro sleeve",
     coingeckoId: "euro-coin",
     tradable: true,
-  },
-  cirBTC: {
-    symbol: "cirBTC",
-    address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
-    decimals: 8,
-    role: "risk",
-    name: "Bitcoin sleeve",
-    coingeckoId: "bitcoin",
-    tradable: false,
-    // Measured directly from the pool contracts rather than taken from an
-    // aggregator: the deepest cirBTC pool on Arc Testnet holds under 0.6
-    // cirBTC and quotes it near 410,000 USDC while real BTC trades near
-    // 80,000. Both the depth and the price are disqualifying on their own.
-    untradableReason:
-      "Arc Testnet's deepest cirBTC pool holds under 0.6 cirBTC and prices it around 5x the real BTC rate, so no trade in it can be economically meaningful",
   },
 };
 

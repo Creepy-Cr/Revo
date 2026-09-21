@@ -11,15 +11,15 @@ export function Scene0() {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
-  const ctaLabel = step === 1 ? 'CONNECT WALLET' : step === 2 ? 'SWITCH TO ARC TESTNET' : step === 3 ? 'SIGN IN & ENTER CONSOLE' : 'AUTHENTICATING...';
+  const ctaLabel = step === 1 ? 'CONNECT WALLET' : step === 2 ? 'SWITCH TO ARC' : step === 3 ? 'SIGN IN & ENTER CONSOLE' : 'AUTHENTICATING...';
 
   return (
     <div className="absolute inset-0 bg-[#000000] text-white flex flex-col font-sans overflow-hidden">
       <div className="flex items-center justify-between px-10 py-6 border-b border-white/5">
         <span className="font-display font-medium tracking-tight text-2xl">Revo Treasury</span>
-        <span className="flex items-center gap-2 text-sm font-mono font-bold tracking-[0.15em] text-yellow-500 uppercase">
-          <span className="w-2 h-2 bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-          TESTNET
+        <span className="flex items-center gap-2 text-sm font-mono font-bold tracking-[0.15em] text-emerald-400 uppercase">
+          <span className="w-2 h-2 bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+          ARC MAINNET
         </span>
       </div>
 
@@ -44,7 +44,7 @@ export function Scene0() {
 
           <div className="border-t border-white/10">
             <StepRow no="01" label="Connect a wallet" meta="EIP-6963 · any injected wallet" state={step > 1 ? 'done' : step === 1 ? 'active' : 'idle'} />
-            <StepRow no="02" label="Arc Testnet network" meta="chain 5042002" state={step > 2 ? 'done' : step === 2 ? 'active' : 'idle'} />
+            <StepRow no="02" label="Arc network" meta="chain 5042" state={step > 2 ? 'done' : step === 2 ? 'active' : 'idle'} />
             <StepRow no="03" label="Verify ownership" meta="one signature · zero gas" state={step > 3 ? 'done' : step === 3 ? 'active' : 'idle'} />
           </div>
 

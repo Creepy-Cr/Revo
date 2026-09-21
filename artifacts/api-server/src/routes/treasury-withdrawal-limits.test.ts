@@ -108,6 +108,21 @@ vi.mock("../lib/arc-chain", async (importOriginal) => {
   };
 });
 
+// Issuer controls are read from Arc mainnet in production; these tests cover
+// the treasury's own limits, so the issuer answers "not blocked" throughout.
+vi.mock("../lib/custody-policy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/custody-policy")>();
+  return {
+    ...actual,
+    isBlockedByIssuer: vi.fn(async () => ({
+      tokenPaused: false,
+      walletBlacklisted: false,
+      destinationBlacklisted: false,
+    })),
+    assertIssuerAllows: vi.fn(async () => {}),
+  };
+});
+
 // Keep the activity feed clean - tests must not surface fake entries in the UI.
 vi.mock("../lib/state", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/state")>();

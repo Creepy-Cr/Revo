@@ -11,7 +11,7 @@ import { fetchDiscordSentiment } from "./discord-sentiment";
  *  - GitHub public API (7-day commit activity on the issuer contracts behind
  *    the treasury's tokens)
  *  - Crypto news RSS feeds (live headline sentiment, keyless)
- *  - Arc Testnet RPC whale scan (live large-USDC-transfer monitoring)
+ *  - Arc RPC whale scan (live large-USDC-transfer monitoring)
  *  - X (Twitter) recent-post sentiment - dormant until X_API_BEARER_TOKEN is set
  *  - Discord community sentiment - dormant until DISCORD_BOT_TOKEN + DISCORD_CHANNEL_IDS are set
  *
@@ -107,10 +107,8 @@ const githubCache = new Map<string, RepoActivity>();
 /**
  * Scales a signed 24h percentage change onto the -100..+100 component range.
  * The factor sets where the component saturates, which has to differ per
- * asset: a 5% day is ordinary for BTC and would be an extraordinary one for
- * EURC, whose USD value tracks the euro and moves an order of magnitude less.
+ * asset. EURC's USD value tracks the euro, so even a modest daily move matters.
  */
-const BTC_MOMENTUM_SCALE = 20; // saturates around a 5% day
 const EURC_MOMENTUM_SCALE = 60; // saturates around a 1.7% day
 
 /**
@@ -134,7 +132,7 @@ async function fetchRepoActivity(owner: string, repo: string): Promise<RepoActiv
         signal: AbortSignal.timeout(6_000),
         headers: {
           Accept: "application/vnd.github+json",
-          "User-Agent": "revo-treasury-testnet-simulator",
+          "User-Agent": "revo-treasury",
         },
       },
     );
@@ -162,10 +160,8 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
   const [
     quote,
     issuerRepoActivity,
-    btcSentiment,
     eurcSentiment,
     usdcSentiment,
-    btcNews,
     eurcNews,
     usdcNews,
     whale,
@@ -176,79 +172,15 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
     // USDC reserve and the EURC sleeve on Arc, so its churn is real risk for
     // both legs rather than a per-asset curiosity.
     fetchRepoActivity("circlefin", "stablecoin-evm"),
-    fetchXSentiment("BTC"),
     fetchXSentiment("EURC"),
     fetchXSentiment("USDC"),
-    fetchNewsSentiment("BTC"),
     fetchNewsSentiment("EURC"),
     fetchNewsSentiment("USDC"),
     fetchWhaleActivity(),
     fetchDiscordSentiment(),
   ]);
 
-  // ---- cirBTC composite: the Bitcoin sleeve, marked against the real BTC market ----
-  {
-    const token = ARC_TOKENS.cirBTC;
-    const components: SignalComponent[] = [];
-    const btcUsd = quote?.btcUsd;
-    const btcChange = quote?.btcChange24h;
-
-    if (quote && typeof btcUsd === "number" && typeof btcChange === "number") {
-      components.push({
-        source: "CoinGecko market data",
-        label: "24h momentum",
-        score: Math.round(clamp(btcChange * BTC_MOMENTUM_SCALE, -100, 100)),
-        weight: 0.6,
-        detail: `BTC at $${btcUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}, ${btcChange >= 0 ? "up" : "down"} ${Math.abs(btcChange).toFixed(2)}% in 24h${quote.stale ? " (last successful fetch)" : ""}. This is the reference market the ${token.symbol} sleeve is marked against, not the Arc pool rate.`,
-      });
-    }
-
-    if (btcSentiment) {
-      components.push({
-        source: "X (Twitter) public posts",
-        label: "Social sentiment",
-        score: btcSentiment.score,
-        weight: 0.25,
-        detail: `${btcSentiment.sampleSize} recent English posts on BTC: ${btcSentiment.bullish} bullish vs ${btcSentiment.bearish} bearish (${btcSentiment.neutral} neutral).`,
-      });
-    }
-
-    if (btcNews) {
-      components.push({
-        source: "Crypto news RSS feeds",
-        label: "News sentiment",
-        score: btcNews.score,
-        weight: 0.25,
-        detail: `${btcNews.sampleSize} live headline${btcNews.sampleSize === 1 ? "" : "s"} mentioning BTC from ${btcNews.feeds.join(", ")}: ${btcNews.bullish} bullish vs ${btcNews.bearish} bearish (${btcNews.neutral} neutral).`,
-      });
-    }
-
-    if (components.length > 0) {
-      const normalized = normalizeWeights(components);
-      const score = compositeScore(normalized);
-      signals.push({
-        id: "sig-cirbtc-composite",
-        asset: token.symbol,
-        score,
-        direction: score >= 58 ? "positive" : score <= 38 ? "warning" : "neutral",
-        title:
-          score >= 58
-            ? `${token.symbol} sleeve reads constructive`
-            : score <= 38
-              ? `${token.symbol} sleeve under pressure`
-              : `${token.symbol} sleeve balanced`,
-        sources: normalized.map((c) => c.source),
-        confidence: Math.round(
-          clamp(55 + normalized.length * 12 + Math.abs(btcChange ?? 0) * 3, 55, 95),
-        ),
-        time: quote && quote.stale ? new Date(quote.fetchedAt).toISOString() : now,
-        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} on the ${token.name.toLowerCase()} the treasury holds as ${token.symbol}, read from the real BTC market.${token.tradable ? "" : ` Price risk only: Revo will not route a trade in ${token.symbol}, because ${token.untradableReason}.`} Each component score below is computed from actually fetched data.`,
-        components: normalized,
-      });
-    }
-  }
-
-  // ---- EURC composite: the only risk sleeve Revo can actually trade ----
+  // ---- EURC composite: the directional sleeve ----
   {
     const token = ARC_TOKENS.EURC;
     const components: SignalComponent[] = [];
@@ -399,7 +331,7 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
         : `${whale.windowBlocks} blocks`;
     const components: SignalComponent[] = [
       {
-        source: "Arc Testnet RPC",
+        source: "Arc RPC",
         label: "Large USDC moves",
         score: Math.round(clamp(25 - whale.whaleCount * 20, -100, 100)),
         weight: 1,
@@ -418,10 +350,10 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
           : whale.whaleCount === 1
             ? "One whale-sized USDC move on Arc"
             : "Whale flows calm on Arc",
-      sources: ["Arc Testnet RPC"],
+      sources: ["Arc RPC"],
       confidence: Math.round(clamp(60 + Math.min(whale.totalTransfers, 30), 60, 90)),
       time: new Date(whale.fetchedAt).toISOString(),
-      detail: `Live scan of USDC ERC-20 transfers on Arc Testnet. Every number is a real observed on-chain event; whale threshold is ${whale.whaleThresholdUsdc.toLocaleString("en-US")} USDC.`,
+      detail: `Live scan of USDC ERC-20 transfers on Arc. Every number is a real observed on-chain event; whale threshold is ${whale.whaleThresholdUsdc.toLocaleString("en-US")} USDC.`,
       components,
     });
   }

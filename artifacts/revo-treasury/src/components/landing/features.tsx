@@ -7,7 +7,7 @@ const GUARDRAILS = [
   { id: 'g-1', label: 'Max protocol exposure', value: '35%', state: 'active' },
   { id: 'g-2', label: 'Minimum liquid reserve', value: '25%', state: 'active' },
   { id: 'g-3', label: 'Emergency exit threshold', value: 'Risk 80+', state: 'armed' },
-  { id: 'g-4', label: 'Execution environment', value: 'Testnet only', state: 'locked' },
+  { id: 'g-4', label: 'Execution environment', value: 'Arc mainnet', state: 'locked' },
 ];
 
 export function Features() {
@@ -123,7 +123,7 @@ export function Features() {
               </div>
               <h3 className="text-3xl md:text-4xl font-display font-medium text-white tracking-tight leading-tight">Hard DAO Guardrails</h3>
               <p className="text-muted-foreground text-lg leading-relaxed font-light">
-                Intelligence is dangerous without boundaries. Revo operates within strictly enforced cryptographic and logical guardrails. Maximum drawdown limits, whitelist-only protocols, and mandatory cool-down periods ensure the simulator never goes rogue.
+                Intelligence is dangerous without boundaries. Revo operates within strictly enforced cryptographic and logical guardrails. Maximum drawdown limits, whitelist-only protocols, and mandatory cool-down periods constrain every action.
               </p>
             </div>
             <div className="flex-1 w-full">
@@ -178,7 +178,7 @@ export function Features() {
                   </div>
                   <h4 className="text-xl font-display font-medium text-white tracking-tight mb-3 leading-tight">Simulate Crisis</h4>
                   <p className="text-sm text-muted-foreground mb-8 max-w-[250px] font-light leading-relaxed">
-                    Trigger a controlled testnet exploit drill to evaluate defensive mechanics.
+                    Trigger a controlled safety drill to evaluate defensive mechanics.
                   </p>
                   
                   <div className="text-xs font-mono tracking-[0.14em] text-muted-foreground uppercase tabular-nums">

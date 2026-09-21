@@ -76,7 +76,6 @@ const REFERENCE_NAV = 800;
 function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
   return {
     usdcUsd: 1,
-    btcUsd: 80_000,
     eurUsd: 1.16,
     fetchedAt: Date.now(),
     stale: false,
@@ -169,18 +168,18 @@ describe("computeDashboard valuation gate", () => {
   });
 
   it("marks the valuation incomplete when a held asset has no reference price", async () => {
-    chain = { down: null, balances: { USDC: LEDGER_USDC, cirBTC: 0.5 } };
-    // CoinGecko omitted bitcoin on this poll, so part of the book is
+    chain = { down: null, balances: { USDC: LEDGER_USDC, EURC: 50 } };
+    // CoinGecko omitted EURC on this poll, so part of the book is
     // unpriceable even though the chain read cleanly.
-    getMarketQuote.mockResolvedValue(quote({ btcUsd: undefined }));
+    getMarketQuote.mockResolvedValue(quote({ eurUsd: undefined }));
 
     const dashboard = await computeDashboard(treasuryId);
 
     expect(dashboard.valuation.complete).toBe(false);
-    expect(dashboard.valuation.note).toContain("cirBTC");
+    expect(dashboard.valuation.note).toContain("EURC");
     // The holding stays visible at its real size; only its value is unknown.
     expect(dashboard.allocations).toContainEqual(
-      expect.objectContaining({ symbol: "cirBTC", units: 0.5, value: 0 }),
+      expect.objectContaining({ symbol: "EURC", units: 50, value: 0 }),
     );
     expect(await navHistory(treasuryId)).toEqual([REFERENCE_NAV]);
     expect(dashboard.dayChange).toBe(0);

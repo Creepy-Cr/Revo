@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "Revo Treasury"
-description = "A production-intent Arc Testnet DAO treasury command center with wallet administration, live signals, policy governance, testnet custody, and Claude Opus 5 treasury intelligence."
+description = "An Arc mainnet DAO treasury command center with wallet administration, live signals, policy governance, USDC and EURC custody, Uniswap v4 rebalancing, and Claude Opus 5 treasury intelligence."
 version = "1.0.0"
 id = "artifacts/revo-treasury"
 router = "path"

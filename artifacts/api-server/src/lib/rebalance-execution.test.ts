@@ -11,7 +11,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketQuote } from "./market";
 
 const readCustodyHoldings = vi.fn();
-const getSynthraQuote = vi.fn();
+const getSwapQuote = vi.fn();
+const readPermit2Allowance = vi.fn();
+const encodePermit2Approval = vi.fn(() => "0x2222");
+const encodeV4Swap = vi.fn(() => "0x3333");
 const readAllowance = vi.fn();
 const simulateCustodyCall = vi.fn();
 const signCustodyCall = vi.fn();
@@ -21,6 +24,8 @@ const getConfirmedReceipt = vi.fn();
 const gasReserveMicroUsdc = vi.fn();
 
 const HASHES: string[] = [];
+/** Base units of the last quoted input, so exact-allowance fixtures can match it. */
+let quotedBaseUnits = 0n;
 function nextHash(): string {
   const hash = `0x${(HASHES.length + 1).toString(16).padStart(64, "0")}`;
   HASHES.push(hash);
@@ -29,7 +34,7 @@ function nextHash(): string {
 
 const WALLET = "0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0";
 const USDC = "0x3600000000000000000000000000000000000000";
-const EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+const EURC = "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1";
 const CIRBTC = "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF";
 const POOL = "0x1111111111111111111111111111111111111111";
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -58,10 +63,9 @@ function billedReceipt(gasUsed: bigint, ...logs: ReturnType<typeof transferLog>[
 }
 
 vi.mock("./holdings", () => ({ readCustodyHoldings }));
-
-vi.mock("./synthra", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./synthra")>();
-  return { ...actual, getSynthraQuote };
+vi.mock("./custody-policy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./custody-policy")>();
+  return { ...actual, assertRebalanceCaps: vi.fn(async () => undefined) };
 });
 
 vi.mock("./arc-chain", async (importOriginal) => {
@@ -77,6 +81,18 @@ vi.mock("./arc-chain", async (importOriginal) => {
     confirmTransfer,
     getConfirmedReceipt,
     gasReserveMicroUsdc,
+  };
+});
+
+vi.mock("./uniswap-v4", () => {
+  return {
+    PERMIT2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    UNIVERSAL_ROUTER: "0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1",
+    SWAP_DEADLINE_SECONDS: 180,
+    getSwapQuote,
+    readPermit2Allowance,
+    encodePermit2Approval,
+    encodeV4Swap,
   };
 });
 
@@ -131,15 +147,45 @@ beforeEach(() => {
   HASHES.length = 0;
   readCustodyHoldings.mockResolvedValue(holdings(1000, 0));
   // 1 USDC buys 0.85 EURC; floor sits 50 bps below.
-  getSynthraQuote.mockImplementation(async (req: { amount: string }) => ({
+  getSwapQuote.mockImplementation(async (req: { inputSymbol: string; outputSymbol: string; amount: string }) => {
+    quotedBaseUnits = BigInt(Math.round(Number(req.amount) * 1e6));
+    return quoteFor(req);
+  });
+  const quoteFor = (req: { inputSymbol: string; outputSymbol: string; amount: string }) => ({
     tradable: true,
-    venue: "synthra",
-    feeTier: 3000,
+    venue: "uniswap-v4",
+    inputSymbol: req.inputSymbol,
+    outputSymbol: req.outputSymbol,
+    inputAmount: req.amount,
+    inputBaseUnits: (BigInt(Math.round(Number(req.amount) * 1e6))).toString(),
+    feeTier: 500,
+    tickSpacing: 10,
+    poolId: `0x${"11".repeat(32)}`,
+    poolKey: {
+      currency0: USDC,
+      currency1: EURC,
+      fee: 500,
+      tickSpacing: 10,
+      hooks: "0x0000000000000000000000000000000000000000",
+    },
+    poolDepthOut: "10000000",
     expectedOutput: (Number(req.amount) * 0.85).toFixed(6),
-    minOutput: (Number(req.amount) * 0.85 * 0.995).toFixed(6),
-    reason: null,
-  }));
-  readAllowance.mockResolvedValue(0n);
+    minOutput: (Number(req.amount) * 0.85 * 0.997).toFixed(6),
+    impliedRate: 0.85,
+    referenceRate: 1 / 1.16,
+    deviationPct: 1,
+    priceImpactPct: 0.1,
+    slippageBps: 30,
+    routerAddress: "0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1",
+    chainId: 5042,
+    warnings: [],
+    quotedAt: new Date().toISOString(),
+  });
+  // Keep one preparatory transaction by default: ERC-20 already allows
+  // Permit2 exactly this trade, while Permit2 still needs to allow the
+  // Universal Router. Approvals are exact, so "sufficient" means equal.
+  readAllowance.mockImplementation(async () => quotedBaseUnits);
+  readPermit2Allowance.mockResolvedValue({ amount: 0n, expiration: 0 });
   simulateCustodyCall.mockResolvedValue(undefined);
   signCustodyCall.mockImplementation(async () => ({
     hash: nextHash(),
@@ -194,7 +240,7 @@ describe("settleRebalance", () => {
   });
 
   it("refuses when the swap simulation reverts, without signing anything", async () => {
-    readAllowance.mockResolvedValue(10n ** 12n);
+    readAllowance.mockImplementation(async () => quotedBaseUnits);
     simulateCustodyCall.mockRejectedValue(
       new ChainError("SIMULATION_REVERTED", "Simulation reverted: STF"),
     );
@@ -207,10 +253,11 @@ describe("settleRebalance", () => {
   });
 
   it("refuses an untradable quote before reaching a signer", async () => {
-    getSynthraQuote.mockResolvedValue({
+    getSwapQuote.mockResolvedValue({
       tradable: false,
-      venue: "synthra",
+      venue: "uniswap-v4",
       feeTier: null,
+      poolKey: null,
       expectedOutput: null,
       minOutput: null,
       reason: "price impact 9.1% exceeds the 5% ceiling",
@@ -224,8 +271,12 @@ describe("settleRebalance", () => {
     expect(signCustodyCall).not.toHaveBeenCalled();
   });
 
-  it("skips the approval when the router already has enough allowance", async () => {
-    readAllowance.mockResolvedValue(10n ** 12n);
+  it("sends no approvals when both allowances are sufficient and unexpired", async () => {
+    readAllowance.mockImplementation(async () => quotedBaseUnits);
+    readPermit2Allowance.mockImplementation(async () => ({
+      amount: quotedBaseUnits,
+      expiration: Math.floor(Date.now() / 1000) + 1_000,
+    }));
 
     const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
 
@@ -233,6 +284,52 @@ describe("settleRebalance", () => {
     if (outcome.kind !== "settled") return;
     expect(outcome.settlement.approvalTxHash).toBeUndefined();
     expect(signCustodyCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("renews Permit2 when its amount is sufficient but it expires before the swap deadline", async () => {
+    readAllowance.mockImplementation(async () => quotedBaseUnits);
+    readPermit2Allowance.mockImplementation(async () => ({
+      amount: quotedBaseUnits,
+      expiration: Math.floor(Date.now() / 1000) + 60,
+    }));
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    expect(encodePermit2Approval).toHaveBeenCalledOnce();
+    expect(signCustodyCall).toHaveBeenCalledTimes(2);
+  });
+
+  it("targets token then Permit2 for approvals and the Universal Router for the swap", async () => {
+    readAllowance.mockResolvedValue(0n);
+    readPermit2Allowance.mockResolvedValue({ amount: 0n, expiration: 0 });
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("settled");
+    const targets = simulateCustodyCall.mock.calls.map((call) => call[1]);
+    expect(targets).toEqual([
+      USDC,
+      "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1",
+    ]);
+  });
+
+  it("refuses a quote with no pool key without signing", async () => {
+    getSwapQuote.mockResolvedValue({
+      tradable: true,
+      venue: "uniswap-v4",
+      minOutput: "1",
+      expectedOutput: "1",
+      feeTier: 500,
+      poolKey: null,
+      reason: "pool key unavailable",
+    });
+
+    const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
+
+    expect(outcome.kind).toBe("refused");
+    expect(signCustodyCall).not.toHaveBeenCalled();
   });
 
   it("leaves gas behind when selling USDC, because Arc bills gas to that balance", async () => {
@@ -321,7 +418,7 @@ describe("settleRebalance", () => {
     expect(outcome.kind).toBe("refused");
     if (outcome.kind !== "refused") return;
     expect(outcome.reason).toContain("RPC timeout");
-    expect(getSynthraQuote).not.toHaveBeenCalled();
+    expect(getSwapQuote).not.toHaveBeenCalled();
   });
 
   it("refuses an empty treasury instead of calling the target trivially met", async () => {
@@ -371,7 +468,7 @@ describe("settleRebalance", () => {
     expect(signCustodyCall).not.toHaveBeenCalled();
   });
 
-  it("sends nothing for sub-dust drift Synthra cannot price", async () => {
+  it("sends nothing for sub-dust drift the venue cannot price", async () => {
     // A drift worth well under 0.01 USDC.
     readCustodyHoldings.mockResolvedValue(holdings(580.002, 500));
 
@@ -638,7 +735,11 @@ describe("settleRebalance", () => {
 
   it("records what the rebalance paid Arc in gas, out of the treasury's own balance", async () => {
     // The router is already allowed, so the swap is the only leg with a bill.
-    readAllowance.mockResolvedValue(10n ** 12n);
+    readAllowance.mockImplementation(async () => quotedBaseUnits);
+    readPermit2Allowance.mockImplementation(async () => ({
+      amount: quotedBaseUnits,
+      expiration: Math.floor(Date.now() / 1000) + 1_000,
+    }));
     confirmTransfer.mockResolvedValue(
       billedReceipt(180_000n, transferLog(EURC, WALLET, 424_400_000n)),
     );
@@ -670,7 +771,7 @@ describe("settleRebalance", () => {
   });
 
   it("reports the gas as not known when the receipt does not carry what it cost", async () => {
-    readAllowance.mockResolvedValue(10n ** 12n);
+    readAllowance.mockImplementation(async () => quotedBaseUnits);
     confirmTransfer.mockResolvedValue(receipt(transferLog(EURC, WALLET, 424_400_000n)));
 
     const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
@@ -701,7 +802,7 @@ describe("settleRebalance", () => {
 
     await settleRebalance(TREASURY, TARGETS, QUOTE);
 
-    const [request] = getSynthraQuote.mock.calls[0] as [{ inputSymbol: string; outputSymbol: string }];
+    const [request] = getSwapQuote.mock.calls[0] as [{ inputSymbol: string; outputSymbol: string }];
     expect(request.inputSymbol).toBe("USDC");
     expect(request.outputSymbol).toBe("EURC");
   });
@@ -749,7 +850,7 @@ describe("readFillFromReceipt", () => {
     getConfirmedReceipt.mockResolvedValue(
       receipt(
         transferLog(EURC, WALLET, 424_400_000n),
-        transferLog(CIRBTC, WALLET, 50_000_000n),
+        transferLog(USDC, WALLET, 50_000_000n),
       ),
     );
 

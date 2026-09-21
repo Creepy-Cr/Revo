@@ -15,7 +15,8 @@ import { logger } from "./logger";
 
 export interface AuditInput {
   action: string;
-  result: "ok" | "denied" | "failed";
+  /** "refused" is a policy refusal at the custody boundary: nothing was signed or sent. */
+  result: "ok" | "denied" | "failed" | "refused";
   /**
    * Owning treasury (tenant) for filtering; null for platform-level events.
    * Stored as a column only - deliberately NOT part of the hash payload so

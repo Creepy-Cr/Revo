@@ -2,9 +2,9 @@ import { defineChain, parseAbi, type Chain } from 'viem';
 import type { ChainParams } from '@workspace/api-client-react';
 
 /**
- * Browser-side Arc Testnet wallet plumbing. All chain parameters come from
+ * Browser-side Arc wallet plumbing. All chain parameters come from
  * the API (public `GET /chain/params`) so the frontend never hardcodes chain
- * facts that could drift from the server's testnet-only enforcement.
+ * facts that could drift from the server's mainnet enforcement.
  * TreasuryWalletInfo (authed) is a superset of ChainParams, so both satisfy
  * these helpers.
  */
@@ -51,28 +51,32 @@ export const usdcAbi = parseAbi([
   'function balanceOf(address owner) view returns (uint256)',
 ]);
 
+export const ARC_CHAIN_ID = 5042;
+export const ARC_CHAIN_NAME = 'Arc';
+export const ARC_EXPLORER_URL = 'https://arc-scan.org';
+
 export function buildArcChain(info: ChainParams): Chain {
   return defineChain({
-    id: info.chainId,
-    name: info.chainName,
+    id: ARC_CHAIN_ID,
+    name: ARC_CHAIN_NAME,
     // Arc's NATIVE USDC uses 18 decimals; the ERC-20 interface (which the
     // app uses for all amounts) uses info.usdcDecimals (6).
     nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
     rpcUrls: { default: { http: [info.rpcUrl] } },
-    blockExplorers: { default: { name: 'Arcscan', url: info.explorerUrl } },
-    testnet: true,
+    blockExplorers: { default: { name: 'Arcscan', url: ARC_EXPLORER_URL } },
+    testnet: false,
   });
 }
 
 /**
- * Switches the user's wallet to Arc Testnet, offering to add the network
+ * Switches the user's wallet to Arc, offering to add the network
  * when the wallet does not know it yet (EIP-3085/3326).
  */
 export async function ensureArcChain(provider: Eip1193Provider, info: ChainParams): Promise<void> {
   try {
     await provider.request({
       method: 'wallet_switchEthereumChain',
-      params: [{ chainId: info.chainIdHex }],
+      params: [{ chainId: `0x${ARC_CHAIN_ID.toString(16)}` }],
     });
   } catch (error) {
     const code = (error as { code?: number } | null)?.code;
@@ -81,11 +85,11 @@ export async function ensureArcChain(provider: Eip1193Provider, info: ChainParam
       method: 'wallet_addEthereumChain',
       params: [
         {
-          chainId: info.chainIdHex,
-          chainName: info.chainName,
+          chainId: `0x${ARC_CHAIN_ID.toString(16)}`,
+          chainName: ARC_CHAIN_NAME,
           nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
           rpcUrls: [info.rpcUrl],
-          blockExplorerUrls: [info.explorerUrl],
+          blockExplorerUrls: [ARC_EXPLORER_URL],
         },
       ],
     });
@@ -105,13 +109,12 @@ export function withdrawalAuthMessage(
   address: string,
   amount: string,
   issuedAt: string,
-  chainId: number,
 ): string {
   return [
-    'Revo Treasury testnet withdrawal',
+    'Revo Treasury withdrawal',
     `Amount: ${amount} USDC`,
     `Destination: ${address.toLowerCase()}`,
     `Issued at: ${issuedAt}`,
-    `Chain: Arc Testnet (${chainId})`,
+    'Chain: Arc (5042)',
   ].join('\n');
 }

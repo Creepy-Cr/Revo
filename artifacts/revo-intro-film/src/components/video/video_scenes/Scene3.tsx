@@ -61,7 +61,7 @@ export function Scene3() {
           <Mono size={16}>Signals · live</Mono>
           <span className="flex items-center" style={{ gap: 10 }}>
             <motion.span style={{ width: 8, height: 8, borderRadius: 999, background: ORANGE }} animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }} />
-            <Mono size={16} color="rgba(255,255,255,0.6)">Arc Testnet</Mono>
+            <Mono size={16} color="rgba(255,255,255,0.6)">Arc</Mono>
           </span>
         </div>
         {SIGNALS.map((row, i) => (

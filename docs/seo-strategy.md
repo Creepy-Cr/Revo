@@ -9,10 +9,10 @@
 - API endpoints, database internals, and mockup/design preview artifact.
 
 ## Target audience
-- DAO treasury operators and crypto-native organizations evaluating guarded, testnet treasury automation.
+- DAO treasury operators and crypto-native organizations evaluating guarded treasury automation on Arc mainnet.
 
 ## Primary keywords
-- AI DAO treasury, Arc Testnet treasury, treasury policy automation, risk-bounded treasury management.
+- AI DAO treasury, Arc mainnet treasury, treasury policy automation, risk-bounded treasury management.
 
 ## Crawler assumptions
 - Public routes should be indexable and shareable.

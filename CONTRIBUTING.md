@@ -10,7 +10,7 @@ bar for anything that touches money movement, custody or authorisation is delibe
 - Open an issue before starting anything larger than a bug fix, so we can agree on the shape.
 - Keep pull requests focused. One concern per PR is much easier to review than a grab bag.
 - Never commit secrets, private keys, RPC credentials or `.env` files. The repo is public.
-- Testnet only. Do not add code paths that point at Arc mainnet or move real value.
+- Mainnet only. Revo runs on Arc mainnet (chain 5042) and moves real value: never add a testnet mode, a bypass of the chain guard, or a code path that signs outside the custody boundary.
 
 ## Getting set up
 

@@ -7,6 +7,7 @@ import { depositIndexerJob } from "./deposit-indexer";
 import { drawdownMonitorJob } from "./drawdown-monitor";
 import { rebalanceReconcilerJob } from "./rebalance-reconciler";
 import { withdrawalReconcilerJob } from "./withdrawal-reconciler";
+import { ledgerReconcilerJob } from "./ledger-reconciler";
 
 /**
  * Durable background worker.
@@ -41,6 +42,7 @@ const JOBS: WorkerJob[] = [
   rebalanceReconcilerJob,
   depositIndexerJob,
   drawdownMonitorJob,
+  ledgerReconcilerJob,
 ];
 
 const instanceId = randomUUID();

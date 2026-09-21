@@ -1,5 +1,11 @@
 # Revo on Arc Mainnet
 
+## Status
+
+The migration is implemented in code as of 22 September 2026. Remaining operational work is
+funding the custody wallet, setting `ALERT_WEBHOOK_URL`, pushing the production database schema
+and configuring DNS.
+
 Research report and migration plan. Prepared 19 September 2026, three days after the Arc public mainnet launch.
 
 This document has three parts:

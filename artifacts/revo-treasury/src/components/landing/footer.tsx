@@ -22,11 +22,11 @@ export function Footer() {
               <span className="font-display font-semibold text-xl tracking-tight text-white">Revo</span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mb-8">
-              A testnet treasury command center for autonomous DAOs. Deposits, withdrawals and approved rebalances settle on Arc Testnet under hard guardrails.
+              A treasury command center for autonomous DAOs. Deposits, withdrawals, and approved Uniswap v4 rebalances settle on Arc mainnet under hard guardrails.
             </p>
             <div className="inline-flex items-center gap-2 text-[10px] font-mono text-white/40 tracking-[0.15em] uppercase tabular-nums border border-white/10 px-3 py-1.5 rounded-sm">
               <span className="w-1 h-1 bg-green-400" />
-              Live on Arc Testnet
+              Live on Arc mainnet
             </div>
           </div>
 
@@ -66,7 +66,7 @@ export function Footer() {
             © {new Date().getFullYear()} Revo Core Technologies. All rights reserved.
           </p>
           <p className="text-[11px] font-mono text-white/30 tracking-[0.1em] uppercase tabular-nums">
-            Built on Arc Testnet
+            Built on Arc
           </p>
         </div>
       </div>

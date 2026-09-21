@@ -14,7 +14,7 @@ import { custodySendLock, type CustodyTransaction } from "./arc-chain";
  * reservation, so concurrent requests cannot jointly exceed a limit.
  */
 
-/** Testnet defaults - admin-configurable via the security endpoints. */
+/** Mainnet defaults, admin-configurable via the security endpoints. */
 const DEFAULT_LIMITS = {
   maxPerWithdrawalUsdc: 25_000,
   maxWallet24hUsdc: 50_000,

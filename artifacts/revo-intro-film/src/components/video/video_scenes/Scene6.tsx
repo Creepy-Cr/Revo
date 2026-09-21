@@ -53,7 +53,7 @@ export function Scene6() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.9, delay: 3.7 }}
         >
-          Built on Arc Testnet · AI-managed · Policy-bound
+          Built on Arc · AI-managed · Policy-bound
         </motion.div>
       </div>
 

@@ -49,7 +49,7 @@ export function Scene3() {
             <div className="flex gap-6 text-sm font-mono tracking-widest">
               <span><span className="text-white/60">USDC</span> <span className="text-white">85.0%</span></span>
               <span><span className="text-white/60">EURC</span> <span className="text-white">10.0%</span></span>
-              <span><span className="text-white/60">cirBTC</span> <span className="text-white">5.0%</span></span>
+              <span><span className="text-white/60">EURC reserve</span> <span className="text-white">5.0%</span></span>
             </div>
           </div>
 
@@ -74,7 +74,7 @@ export function Scene3() {
                 <Check className="w-8 h-8 text-green-400" />
               </div>
               <h2 className="text-2xl font-display text-white mb-2">Approved rebalance executed</h2>
-              <p className="text-green-400 font-mono text-sm tracking-widest uppercase">(Simulated on Testnet)</p>
+              <p className="text-green-400 font-mono text-sm tracking-widest uppercase">(Executed on Arc)</p>
             </div>
           </motion.div>
         )}

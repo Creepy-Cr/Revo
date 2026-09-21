@@ -4,7 +4,7 @@
  * Revo settles on Arc, but a treasury's USDC is rarely confined to one chain.
  * App Kit answers the cross-chain half of that picture. This module currently
  * exposes a single read: the treasury custody wallet's Circle Gateway unified
- * USDC balance across every supported testnet.
+ * USDC balance across every supported mainnet chain.
  *
  * Two properties of this reading are easy to get wrong, so they are enforced
  * here rather than left to callers:
@@ -23,8 +23,8 @@
  */
 import { AppKit } from "@circle-fin/app-kit";
 
-/** App Kit's identifier for Arc Testnet, Revo's settlement chain. */
-const ARC_CHAIN = "Arc_Testnet";
+/** App Kit's identifier for Arc, Revo's settlement chain. */
+const ARC_CHAIN = "Arc";
 
 const SUCCESS_TTL_MS = 30_000;
 const FAILURE_TTL_MS = 5_000;
@@ -176,7 +176,7 @@ async function probe(address: string): Promise<CrosschainBalanceReading> {
   const raw = (await withTimeout(
     appKit().unifiedBalance.getBalances({
       token: "USDC",
-      networkType: "testnet",
+      networkType: "mainnet",
       sources: [{ address }],
     }),
   )) as GatewayBalances;

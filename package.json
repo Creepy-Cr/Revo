@@ -1,7 +1,7 @@
 {
   "name": "revo",
   "version": "0.0.0",
-  "description": "Autonomous treasury intelligence on Arc. Plain-English policy compiled into enforced guardrails, with USDC settlement on Arc Testnet.",
+  "description": "Autonomous treasury intelligence on Arc. Plain-English policy compiled into enforced guardrails, with USDC settlement on Arc.",
   "license": "MIT",
   "private": true,
   "homepage": "https://therevo.xyz",

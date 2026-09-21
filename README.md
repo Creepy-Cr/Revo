@@ -17,7 +17,7 @@
   <a href="https://github.com/Creepy-Cr/Revo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Creepy-Cr/Revo/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-2A2A2A?style=flat-square" /></a>
   <a href="https://x.com/RevoLabsHQ"><img alt="Follow on X" src="https://img.shields.io/badge/X-%40RevoLabsHQ-000000?style=flat-square&logo=x&logoColor=white" /></a>
-  <img alt="Arc Testnet only" src="https://img.shields.io/badge/network-Arc%20Testnet%20only-6B6B6B?style=flat-square" />
+  <img alt="Arc mainnet" src="https://img.shields.io/badge/network-Arc%20mainnet-6B6B6B?style=flat-square" />
 </p>
 
 <p align="center">
@@ -45,11 +45,12 @@ exactly what the rules are. Revo replaces that with three things:
    clamped to server-side guardrails before it becomes a proposal. The model never signs, never
    broadcasts and never sees a key.
 3. **Real settlement on Arc.** Deposits, withdrawals and approved rebalances are real
-   transactions on Arc Testnet, paid for in USDC, confirmed from receipts and reconciled by
+   transactions on Arc mainnet, paid for in USDC, confirmed from receipts and reconciled by
    background workers that survive restarts.
 
-Revo is **testnet only**. No real funds are involved anywhere in this codebase, and the chain
-guard refuses to talk to any network other than Arc Testnet (chain id `5042002`).
+Revo custodies and moves real USDC and EURC on Arc mainnet. The chain guard refuses any chain
+other than Arc (chain id `5042`). Use involves smart contract, custody, stablecoin, liquidity
+and operational risk, including possible loss of funds.
 
 <p align="center">
   <img src="docs/assets/console.jpg" alt="The Revo treasury console with the Arcus agent panel open" width="100%" />
@@ -63,7 +64,7 @@ guard refuses to talk to any network other than Arc Testnet (chain id `5042002`)
 | --- | --- | --- |
 | **Instruct** | A strategist types an instruction in plain English. Arcus (Claude, via the Anthropic API) compiles it into a structured policy draft. | Human writes, model drafts |
 | **Decide** | The deterministic policy engine clamps allocation, reserve and drawdown targets to hard limits, then opens a proposal. An approver approves or rejects. In Autonomous mode, in-policy rebalance drafts are approved automatically. | Server enforces, human approves |
-| **Settle** | An approved rebalance is quoted on Synthra, simulated, signed by the treasury's custody key, broadcast on Arc and confirmed from the receipt. Deposits and withdrawals move real USDC the same way. | Custody key, under pause and cap checks |
+| **Settle** | An approved rebalance is quoted on Uniswap v4, preflighted, signed by the treasury's custody key, broadcast on Arc and confirmed from the receipt. Deposits and withdrawals move real USDC the same way. | Custody key, under pause and cap checks |
 | **Control** | Guardians can drop the treasury into Safe mode or trigger the emergency pause at any time. Everything is written to a hash-chained audit trail. Arcus can explain any of it, but cannot override any of it. | Human, always |
 
 The short version: **the model drafts, the engine clamps, a human approves, Arc settles.**
@@ -75,23 +76,21 @@ the reason a treasury product like this can be simple:
 
 - **USDC is the native gas token.** A treasury never has to hold a separate volatile asset just
   to pay fees. Revo checks spendable USDC, not just held USDC, before every send.
-- **Circle-issued stablecoins on both sides of the book.** The two sleeves Revo rebalances
-  between are native USDC and EURC, with cirBTC held and valued but not routed.
+- **Circle-issued stablecoins on both sides of the book.** The two assets Revo supports and
+  rebalances are native USDC and EURC.
 - **Circle Gateway** gives the custody wallet a unified USDC balance view across every
-  Gateway-supported testnet, read through Circle App Kit and shown per chain in the console.
+  Gateway-supported chain, read through Circle App Kit and shown per chain in the console.
 - **Deterministic finality and predictable fees**, which is what lets settlement reconcile
   from receipts rather than from hope.
 
-| Arc Testnet | Value |
+| Arc mainnet | Value |
 | --- | --- |
-| Chain id | `5042002` |
-| Default RPC | `https://rpc.testnet.arc.io` (override with `ARC_TESTNET_RPC_URL`) |
-| Explorer | [testnet.arcscan.app](https://testnet.arcscan.app) |
-| Faucet | [faucet.circle.com](https://faucet.circle.com) |
-| Native USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) (6 decimals) |
-| EURC | `0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a` |
-| cirBTC | `0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF` (held, not tradable) |
-| Swap venue | [Synthra](https://synthra.org) router, quoter and pools on Arc Testnet |
+| Chain id | `5042` |
+| RPC | Multiple public Arc mainnet providers with automatic failover; optional `ARC_RPC_URLS` supplies a comma-separated override list |
+| Explorer | [arc-scan.org](https://arc-scan.org) |
+| Native USDC | [`0x3600000000000000000000000000000000000000`](https://arc-scan.org/address/0x3600000000000000000000000000000000000000) (6 decimals) |
+| EURC | [`0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`](https://arc-scan.org/address/0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1) (6 decimals) |
+| Swap venue | Uniswap v4, USDC/EURC 0.05% pool (`fee 500`, `tickSpacing 10`): PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`, V4Quoter `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`, StateView `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b`, UniversalRouter `0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1`, Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
 | Token registry | [Tower Exchange](https://docs.tower.exchange) public API, used as a secondary cross-check of token addresses; it never authorises a trade |
 
 Useful Arc links: [Arc docs](https://docs.arc.network) ·
@@ -117,7 +116,7 @@ Four planes, one database, no shared mutable state outside PostgreSQL:
 - **Settlement.** Per-treasury custody wallet with the key sealed under AES-256-GCM envelope
   encryption and unsealed in memory only for a single signing call. Deposits are indexed from
   logs at 12 confirmations with reorg rewind. Withdrawals reserve balance under a lock, re-check
-  the pause under the same lock, sign locally and broadcast. Rebalances quote, simulate, set
+  the pause under the same lock, sign locally and broadcast. Rebalances quote, preflight, set
   the token allowance, swap, persist the transaction hash before broadcast and read the
   realised fill from the receipt.
 - **Durable workers.** A single leader elected by lease with fencing, ticking every 15 seconds:
@@ -126,6 +125,17 @@ Four planes, one database, no shared mutable state outside PostgreSQL:
   that was broadcast is confirmed or returned to pending from its receipt, one that never
   broadcast is returned to pending, and one Arc has no record of is flagged for manual review
   instead of being re-sent.
+
+### Custody and limits
+
+- Each treasury uses a server-side sealed key. The signer allowlist permits only USDC and EURC
+  transfers and approvals, Permit2 approvals and UniversalRouter execution.
+- The emergency pause is re-checked at signing. Rebalances have absolute USD caps per trade and
+  per day, and signing refuses stale prices or a Circle-blocklisted or paused token.
+- Swaps allow at most 1% price impact, 2% reference-price deviation, 30 bps slippage and 10% of
+  the pool's 2% depth. The deadline is 180 seconds, and exact-amount Permit2 approvals expire
+  with the swap.
+- Ledger balances are reconciled against chain balances. A shortfall pauses execution.
 
 The full write-up, including the custody model and what is real versus displayed, is in
 [`docs/architecture`](./docs/architecture/README.md). The diagram is maintained as SVG and
@@ -146,7 +156,7 @@ re-rendered with `pnpm --filter @workspace/scripts run render-architecture`.
 **Custody and settlement on Arc**
 - Per-treasury EOA, envelope-encrypted, never persisted in plaintext
 - Real USDC deposits and withdrawals with confirmation depth, reorg handling and refunds
-- Real USDC and EURC swaps through Synthra with price impact and pool share limits, gas paid in USDC
+- Real USDC and EURC swaps through Uniswap v4 with price impact and pool share limits, gas paid in USDC
 - Circle Gateway unified balance reads, per chain, through Circle App Kit
 
 **Controls operators actually have**
@@ -214,8 +224,7 @@ generated from it.
   `pnpm-workspace.yaml` before `pnpm install` (see the note there)
 - PostgreSQL (any recent version; a connection string is enough)
 - An Anthropic-compatible endpoint for Arcus (`AI_INTEGRATIONS_ANTHROPIC_*`, see below)
-- A browser wallet (MetaMask, Rabby, Phantom or OKX) with Arc Testnet added and some
-  [faucet USDC](https://faucet.circle.com)
+- A browser wallet (MetaMask, Rabby, Phantom or OKX) with Arc mainnet added and real USDC
 
 ### Install and run
 
@@ -243,7 +252,7 @@ development the two servers are on different ports, so the Vite dev server forwa
 `API_PROXY_TARGET`; the session cookie stays same-origin and `http://localhost:5173` is already
 an allowed origin outside production.
 
-Open the console, connect a wallet on Arc Testnet and sign the nonce. A first-time wallet gets
+Open the console, connect a wallet on Arc mainnet and sign the nonce. A first-time wallet gets
 its own treasury provisioned on the spot and becomes its admin.
 
 ### Environment
@@ -258,7 +267,10 @@ its own treasury provisioned on the spot and becomes its admin.
 | `SESSION_SECRET` | no | Development-only fallback for `CUSTODY_MASTER_SECRET`. Sessions themselves are random database-backed tokens and need no signing key |
 | `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | yes | API key for Arcus |
 | `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` | yes | Anthropic-compatible base URL |
-| `ARC_TESTNET_RPC_URL` | no | Arc Testnet RPC, defaults to `https://rpc.testnet.arc.io` |
+| `ARC_RPC_URLS` | no | Comma-separated Arc mainnet RPC override list; otherwise the built-in public providers use automatic failover |
+| `ALERT_WEBHOOK_URL` | no | POST target for critical alerts; Slack incoming webhooks are supported |
+| `REBALANCE_MAX_USD_PER_TRADE` | no | Absolute rebalance cap per trade, defaults to `25000` |
+| `REBALANCE_MAX_USD_PER_DAY` | no | Absolute rebalance cap per rolling day, defaults to `100000` |
 | `APP_ORIGINS` | production | Comma-separated browser origins allowed to call the API |
 | `OWNER_WALLET_ADDRESSES` | no | Wallets that are admins of the founding treasury |
 | `DRAWDOWN_AUTO_DERISK` | no | `true` records when the automatic de-risk gate is reached in Autonomous mode. Execution is not armed; no trade is made |
@@ -288,7 +300,7 @@ its own treasury provisioned on the spot and becomes its admin.
 pnpm run test
 ```
 
-The suite covers the policy contract, rebalance planning and settlement, Synthra and Tower
+The suite covers the policy contract, rebalance planning and settlement, Uniswap v4 and Tower
 quoting, App Kit reads, auth origin checks, withdrawal caps, the custody lock, worker fencing
 and the dashboard and proposal routes. Route and worker tests run against a real PostgreSQL
 database and stub the chain, so `DATABASE_URL` must point at a database you are happy to write
@@ -314,8 +326,8 @@ runs the background jobs at a time.
 
 ## Security
 
-Revo is pre-release software on a test network. It is built defensively (server-side clamps,
-custody key sealing, pause and cap checks under locks, chain guard, hash-chained audit) but it
+Revo is pre-release software that moves real funds on Arc mainnet. It includes server-side clamps,
+custody key sealing, pause and cap checks under locks, a chain guard and a hash-chained audit, but it
 has not been independently audited. Please read the [risk disclosure](https://therevo.xyz/risk)
 before using it for anything beyond experimentation, and report vulnerabilities privately as
 described in [SECURITY.md](./SECURITY.md).
@@ -332,9 +344,9 @@ local setup, conventions and the areas that need extra care. Please follow the
 - Product docs: [therevo.xyz/docs](https://therevo.xyz/docs)
 - Risk disclosure: [therevo.xyz/risk](https://therevo.xyz/risk)
 - X: [@RevoLabsHQ](https://x.com/RevoLabsHQ)
-- Arc: [arc.network](https://arc.network) · [docs](https://docs.arc.network) · [explorer](https://testnet.arcscan.app) · [faucet](https://faucet.circle.com)
+- Arc: [arc.network](https://arc.network) · [docs](https://docs.arc.network) · [explorer](https://arc-scan.org)
 - Circle: [Gateway](https://developers.circle.com/gateway) · [developer docs](https://developers.circle.com)
-- Venue and registry: [Synthra](https://synthra.org) · [Tower Exchange](https://docs.tower.exchange)
+- Venue and registry: [Uniswap v4 Arc deployments](https://docs.uniswap.org/contracts/v4/deployments) · [Tower Exchange](https://docs.tower.exchange)
 - Model: [Anthropic](https://docs.anthropic.com)
 
 ## Licence

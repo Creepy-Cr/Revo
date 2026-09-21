@@ -10,7 +10,7 @@ const sections: DocSection[] = [
           This Privacy Policy describes how <strong>Revo Core Technologies</strong> ("Revo", "we",
           "us") collects, uses, and protects information when you use the Revo Treasury platform,
           the public website, the operator console, and the underlying API (together, the
-          "Service"), operating on the Arc Testnet.
+          "Service"), operating on Arc mainnet.
         </p>
         <p>
           Revo is designed around a simple principle: <strong>your wallet is your identity</strong>.
@@ -51,7 +51,7 @@ const sections: DocSection[] = [
             </>,
             <>
               <strong>On-chain transfer records.</strong> Transaction hashes, amounts, and wallet
-              addresses for testnet deposits and withdrawals you initiate.
+              addresses for deposits, withdrawals, and swaps you initiate.
             </>,
             <>
               <strong>Technical logs.</strong> Standard request logs (timestamps, request paths,
@@ -92,7 +92,7 @@ const sections: DocSection[] = [
           items={[
             <>Authenticate operators and maintain signed-in sessions.</>,
             <>Operate your treasury: generate, validate, execute, and record proposals.</>,
-            <>Verify testnet deposits and process withdrawal requests on-chain.</>,
+            <>Verify deposits and process withdrawal requests on-chain.</>,
             <>Enforce security controls: withdrawal caps, emergency pause, and role permissions.</>,
             <>Maintain a tamper-evident audit trail of privileged actions.</>,
             <>Detect abuse, debug failures, and keep the Service reliable.</>,
@@ -119,7 +119,7 @@ const sections: DocSection[] = [
         <p>
           Agent conversations are subject to rate limits and content bounds to prevent abuse.{' '}
           <strong>Do not include personal, sensitive, or confidential information in messages to
-          Arcus</strong>; the agent needs none of it to manage a testnet treasury.
+          Arcus</strong>; the agent needs none of it to manage your treasury.
         </p>
       </>
     ),
@@ -144,7 +144,7 @@ const sections: DocSection[] = [
     body: (
       <>
         <p>
-          Deposits and withdrawals settle on the Arc Testnet, a public blockchain. Transaction
+          Deposits, withdrawals, and Uniswap v4 trades settle on Arc mainnet, a public blockchain. Transaction
           hashes, wallet addresses, amounts, and timestamps are permanently visible to anyone
           through a block explorer. This is a property of public blockchains, not something Revo
           controls, and it cannot be deleted by us or by you.
@@ -190,9 +190,8 @@ const sections: DocSection[] = [
         <p>
           Treasury records, audit events, and transfer history are retained for as long as the
           Service operates, because they form the operational and security record of your
-          treasury. Expired sessions are invalidated and unusable. Because the platform runs on a
-          test network, the environment, including stored records, may be reset as part of
-          testnet lifecycle events.
+          treasury. Expired sessions are invalidated and unusable. On-chain records remain public
+          according to Arc's operation and cannot be deleted by Revo.
         </p>
       </>
     ),
@@ -212,7 +211,7 @@ const sections: DocSection[] = [
               are not signed in.
             </>,
             <>
-              <strong>Withdraw your testnet funds:</strong> deposited testnet USDC can be
+              <strong>Withdraw your funds:</strong> deposited USDC can be
               withdrawn back to the depositing wallet, subject to security limits.
             </>,
           ]}

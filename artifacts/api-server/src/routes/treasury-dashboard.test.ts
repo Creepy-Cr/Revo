@@ -25,7 +25,7 @@ import {
   treasurySettingsTable,
   treasuryStateTable,
 } from "@workspace/db";
-import { ARC_TESTNET_CHAIN_NAME } from "../lib/arc-chain";
+import { ARC_CHAIN_NAME } from "../lib/arc-chain";
 import { ARC_TOKENS } from "../lib/arc-tokens";
 
 const TEST_TREASURY_ID = `test-treasury-dashboard-${randomUUID()}`;
@@ -61,8 +61,6 @@ vi.mock("../lib/market", async (importOriginal) => {
       usdcUsd: 1,
       eurUsd: 1.16,
       eurChange24h: 0,
-      btcUsd: 80_000,
-      btcChange24h: 0,
       fetchedAt: Date.now(),
       stale: false,
     })),
@@ -216,6 +214,6 @@ describe("dashboard status follows the operating mode", () => {
   it("names the chain from the chain config rather than a stored string", async () => {
     // The network used to be a second init-time constant sitting next to the
     // status. It is one Arc client and one chain name, so they cannot drift.
-    expect((await dashboard()).network).toBe(ARC_TESTNET_CHAIN_NAME);
+    expect((await dashboard()).network).toBe(ARC_CHAIN_NAME);
   });
 });

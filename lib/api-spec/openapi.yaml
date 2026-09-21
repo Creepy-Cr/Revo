@@ -3,7 +3,7 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: Revo Treasury testnet simulation API
+  description: Revo Treasury API (Arc mainnet)
 servers:
   - url: /api
     description: Base API path
@@ -11,7 +11,7 @@ tags:
   - name: health
     description: Health operations
   - name: treasury
-    description: Testnet treasury operations
+    description: Treasury operations on Arc mainnet
   - name: auth
     description: Wallet-based operator authentication (SIWE-style)
 paths:
@@ -31,10 +31,10 @@ paths:
     get:
       operationId: getChainStatus
       tags: [treasury]
-      summary: Live Arc Testnet chain connectivity status
+      summary: Live Arc chain connectivity status, per RPC provider
       responses:
         "200":
-          description: Current chain status from the Arc Testnet RPC
+          description: Current chain status from the Arc RPC providers
           content:
             application/json:
               schema:
@@ -43,7 +43,7 @@ paths:
     get:
       operationId: getChainParams
       tags: [treasury]
-      summary: Public Arc Testnet chain parameters for wallet setup (no auth - needed before sign-in to detect/switch networks)
+      summary: Public Arc mainnet chain parameters for wallet setup (no auth - needed before sign-in to detect/switch networks)
       responses:
         "200":
           description: Chain parameters shared by every treasury
@@ -95,7 +95,7 @@ paths:
     post:
       operationId: startRiskDrill
       tags: [treasury]
-      summary: Start the simulated protocol-exploit safety drill (testnet drill only)
+      summary: Start the simulated protocol-exploit safety drill (drill only; no real trade is placed)
       responses:
         "200":
           description: Drill started (or already running)
@@ -201,7 +201,7 @@ paths:
       description: >-
         Returns as soon as the proposal is claimed, with status "approved".
         Settling the rebalance is a chain round trip - sizing the swap against
-        the custody wallet's live balances, quoting it on Synthra, simulating
+        the custody wallet's live balances, quoting it on Uniswap v4, simulating
         it with eth_call, then signing, broadcasting and confirming - which has
         no upper bound under Arc congestion, so it is NOT awaited here. Poll
         the proposal for the outcome: "executed" with executionTxHash means the
@@ -284,7 +284,7 @@ paths:
     get:
       operationId: getTreasuryWalletInfo
       tags: [treasury]
-      summary: Get the treasury's Arc Testnet deposit address and chain parameters
+      summary: Get the treasury's Arc deposit address and chain parameters
       responses:
         "200":
           description: Treasury on-chain wallet info
@@ -296,7 +296,7 @@ paths:
     post:
       operationId: claimTreasuryDeposit
       tags: [treasury]
-      summary: Credit a confirmed on-chain testnet USDC transfer to the treasury (verified against the Arc Testnet RPC)
+      summary: Credit a confirmed on-chain USDC transfer to the treasury (verified against the Arc RPC)
       requestBody:
         required: true
         content:
@@ -314,7 +314,7 @@ paths:
     post:
       operationId: requestTreasuryWithdrawal
       tags: [treasury]
-      summary: Withdraw previously deposited testnet USDC back to the depositor's wallet (sent on-chain by the treasury)
+      summary: Withdraw previously deposited USDC back to the depositor's wallet (sent on-chain by the treasury)
       requestBody:
         required: true
         content:
@@ -350,7 +350,7 @@ paths:
     get:
       operationId: getTreasuryCrosschainBalance
       tags: [treasury]
-      summary: Read the treasury's Circle Gateway unified USDC balance across supported testnets
+      summary: Read the treasury's Circle Gateway unified USDC balance across supported chains
       responses:
         "200":
           description: Unified balance reading, or an explicit unavailable result
@@ -577,7 +577,7 @@ paths:
     get:
       operationId: getTreasurySwapVenue
       tags: [treasury]
-      summary: Report whether a real on-chain swap venue is usable on Arc Testnet
+      summary: Report whether Uniswap v4 on Arc is usable for a real swap right now
       responses:
         "200":
           description: >-
@@ -591,7 +591,7 @@ paths:
     post:
       operationId: quoteTreasurySwap
       tags: [treasury]
-      summary: Price a real Arc Testnet swap without executing it
+      summary: Price a real Uniswap v4 swap on Arc without executing it
       requestBody:
         required: true
         content:
@@ -650,6 +650,26 @@ components:
           type: string
         latencyMs:
           type: number
+        providers:
+          type: array
+          description: Every configured Arc RPC provider and what it answered, in failover order
+          items:
+            type: object
+            required: [label, reachable, chainId, blockNumber, latencyMs, error]
+            properties:
+              label:
+                type: string
+                description: Provider hostname, never a full URL
+              reachable:
+                type: boolean
+              chainId:
+                type: ["number", "null"]
+              blockNumber:
+                type: ["number", "null"]
+              latencyMs:
+                type: ["number", "null"]
+              error:
+                type: ["string", "null"]
         stale:
           type: boolean
         checkedAt:
@@ -657,11 +677,11 @@ components:
           format: date-time
     ChainParams:
       type: object
-      required: [chainId, chainIdHex, chainName, rpcUrl, usdcAddress, usdcDecimals, explorerUrl, faucetUrl]
+      required: [chainId, chainIdHex, chainName, rpcUrl, usdcAddress, usdcDecimals, explorerUrl]
       properties:
         chainId:
           type: number
-          description: Arc Testnet chain id (5042002)
+          description: Arc mainnet chain id (5042)
         chainIdHex:
           type: string
           description: Chain id as a 0x-prefixed hex string for wallet RPC calls
@@ -669,17 +689,15 @@ components:
           type: string
         rpcUrl:
           type: string
+          description: Arc's public RPC endpoint for the browser's add-chain prompt. Never the server's configured provider list.
         usdcAddress:
           type: string
-          description: USDC ERC-20 interface contract address on Arc Testnet
+          description: USDC ERC-20 interface contract address on Arc
         usdcDecimals:
           type: number
           description: Decimals of the USDC ERC-20 interface (6)
         explorerUrl:
           type: string
-        faucetUrl:
-          type: string
-          description: Where to get Arc Testnet USDC
     Allocation:
       type: object
       required: [symbol, name, percentage, value, tone, source, tradable, units]
@@ -705,7 +723,7 @@ components:
             field rather than inferring from the symbol.
         tradable:
           type: boolean
-          description: Whether Revo can route a trade in this asset on Arc Testnet
+          description: Whether Revo can route a trade in this asset on Arc
         units:
           type: number
           description: Token units held, as opposed to their dollar value
@@ -739,13 +757,13 @@ components:
           enum: [onchain, simulated, system]
           description: >-
             How this event relates to real money movement. "onchain" means a real
-            Arc Testnet transaction settled. "simulated" means internal accounting
+            Arc transaction settled. "simulated" means internal accounting
             only, with no protocol swap and no transaction. "system" means a
             governance or control event that moves no funds. Consumers should use
             this field rather than parsing the title.
         txHash:
           type: ["string", "null"]
-          description: Arc Testnet transaction this event reports on, when there is one.
+          description: Arc transaction this event reports on, when there is one.
         explorerTxUrl:
           type: ["string", "null"]
           description: Block-explorer link for txHash, when there is one.
@@ -945,7 +963,7 @@ components:
         executionTxHash:
           type: ["string", "null"]
           description: >-
-            Arc Testnet hash of the swap settling this rebalance. Written
+            Arc transaction hash of the swap settling this rebalance. Written
             immediately before the swap is broadcast, so a proposal with
             allocation targets can never read "executed" without one, and an
             "approved" proposal with no hash means no swap was ever sent.
@@ -1023,14 +1041,14 @@ components:
           maxLength: 600
     TreasuryWalletInfo:
       type: object
-      required: [treasuryAddress, chainId, chainIdHex, chainName, rpcUrl, usdcAddress, usdcDecimals, explorerUrl, faucetUrl]
+      required: [treasuryAddress, chainId, chainIdHex, chainName, rpcUrl, usdcAddress, usdcDecimals, explorerUrl]
       properties:
         treasuryAddress:
           type: string
-          description: The treasury's Arc Testnet address that receives deposits
+          description: The treasury's Arc address that receives deposits
         chainId:
           type: number
-          description: Arc Testnet chain id (5042002)
+          description: Arc mainnet chain id (5042)
         chainIdHex:
           type: string
           description: Chain id as a 0x-prefixed hex string for wallet RPC calls
@@ -1038,17 +1056,15 @@ components:
           type: string
         rpcUrl:
           type: string
+          description: Arc's public RPC endpoint for the browser's add-chain prompt. Never the server's configured provider list.
         usdcAddress:
           type: string
-          description: USDC ERC-20 interface contract address on Arc Testnet
+          description: USDC ERC-20 interface contract address on Arc
         usdcDecimals:
           type: number
           description: Decimals of the USDC ERC-20 interface (6)
         explorerUrl:
           type: string
-        faucetUrl:
-          type: string
-          description: Where to get Arc Testnet USDC
     CrosschainBalance:
       type: object
       required: [address, token, source, available, deposited, chains, stale, checkedAt]
@@ -1096,7 +1112,7 @@ components:
       properties:
         chain:
           type: string
-          description: Circle App Kit chain identifier, for example Arc_Testnet
+          description: Circle App Kit chain identifier, for example Arc
         label:
           type: string
           description: Human-readable chain name
@@ -1105,7 +1121,7 @@ components:
           description: Confirmed Gateway balance on this chain, as a decimal string
         isArc:
           type: boolean
-          description: True for Arc Testnet, the treasury's settlement chain
+          description: True for Arc, the treasury's settlement chain
     OnchainTransfer:
       type: object
       required: [id, direction, wallet, amountUsdc, txHash, status, explorerTxUrl, createdAt, confirmedAt]
@@ -1152,7 +1168,7 @@ components:
         txHash:
           type: string
           pattern: "^0x[0-9a-fA-F]{64}$"
-          description: Hash of the on-chain testnet USDC transfer to the treasury address
+          description: Hash of the on-chain USDC transfer to the treasury address
     WithdrawalRequest:
       type: object
       required: [address, amountUsdc, issuedAt, signature]
@@ -1204,7 +1220,7 @@ components:
           nullable: true
         result:
           type: string
-          description: ok, denied, or failed
+          description: ok, denied, failed, or refused (a custody policy refusal; nothing was signed)
         reason:
           type: string
           nullable: true
@@ -1443,6 +1459,7 @@ components:
           rpcReachable,
           contractsDeployed,
           blockNumber,
+          livePools,
           swapEnabled,
           tokens,
           checkedAt,
@@ -1468,16 +1485,32 @@ components:
           description: Whether the venue catalogue could be read
         arcSupportsSwaps:
           type: boolean
-          description: Whether the catalogue still advertises swap support on Arc Testnet
+          description: Whether the catalogue still advertises swap support on Arc
         rpcReachable:
           type: boolean
           description: Whether Arc's RPC answered
         contractsDeployed:
           type: boolean
-          description: Whether the factory, quoter and router all have code on Arc
+          description: Whether the PoolManager, quoter, UniversalRouter and Permit2 all have code on Arc
         blockNumber:
           type: ["string", "null"]
           description: Arc block height at the time of the check
+        livePools:
+          type: array
+          description: Initialised USDC/EURC pools with in-range liquidity right now
+          items:
+            type: object
+            required: [poolId, feeTier, tickSpacing, liquidity]
+            properties:
+              poolId:
+                type: string
+              feeTier:
+                type: number
+              tickSpacing:
+                type: number
+              liquidity:
+                type: string
+                description: In-range liquidity as reported by StateView, base units
         swapEnabled:
           type: boolean
           description: >-
@@ -1521,8 +1554,9 @@ components:
           deviationPct,
           priceImpactPct,
           feeTier,
-          poolAddress,
-          poolLiquidityOut,
+          tickSpacing,
+          poolId,
+          poolDepthOut,
           slippageBps,
           routerAddress,
           chainId,
@@ -1568,12 +1602,19 @@ components:
             the same pool, not a figure reported by the venue.
         feeTier:
           type: ["number", "null"]
-          description: Uniswap v3 fee tier of the pool chosen, in hundredths of a bip
-        poolAddress:
+          description: Fee of the Uniswap v4 pool chosen, in hundredths of a basis point (500 = 0.05%)
+        tickSpacing:
+          type: ["number", "null"]
+          description: Tick spacing of the pool chosen
+        poolId:
           type: ["string", "null"]
-        poolLiquidityOut:
+          description: Uniswap v4 pool id (keccak of the pool key) inside the PoolManager singleton
+        poolDepthOut:
           type: ["string", "null"]
-          description: Output-side token balance held by the pool
+          description: >-
+            Output the pool can deliver within a 2% price move at its current
+            in-range liquidity, in human units. The pool-share ceiling is
+            applied against this figure.
         slippageBps:
           type: number
         routerAddress:

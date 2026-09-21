@@ -73,7 +73,7 @@ async function fetchChannelMessages(channelId: string, token: string): Promise<s
       signal: AbortSignal.timeout(8_000),
       headers: {
         Authorization: `Bot ${token}`,
-        "User-Agent": "revo-treasury-testnet-simulator",
+        "User-Agent": "revo-treasury",
       },
     },
   );

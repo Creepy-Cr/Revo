@@ -15,7 +15,7 @@ import { doublePrecision, pgTable, text, timestamp } from "drizzle-orm/pg-core";
  * read as a position by anyone inspecting this table.
  *
  * `status` and `network` are gone for the same reason. Both were written once
- * at initialisation ("AUTONOMOUS", "Arc Testnet") and never updated again, so
+ * at initialisation ("AUTONOMOUS", "Arc") and never updated again, so
  * the console kept showing AUTO-EXECUTE after an operator switched the
  * treasury into Safe mode. The operating mode lives in
  * `treasury_settings.mode` - the value the approval, policy and engine guards
@@ -47,7 +47,7 @@ export type NavSnapshot = typeof navSnapshotsTable.$inferSelect;
  *
  * `kind` makes the real-vs-simulated distinction machine-readable rather than
  * something a reader has to infer from the wording of `title`:
- *   - "onchain"   a real Arc Testnet transaction settled
+ *   - "onchain"   a real Arc transaction settled
  *   - "simulated" internal accounting only; no protocol swap, no transaction
  *   - "system"    governance/control event that moves no funds at all
  *
@@ -62,7 +62,7 @@ export const agentActivitiesTable = pgTable("agent_activities", {
   status: text("status").notNull(),
   kind: text("kind").notNull().default("system"),
   /**
-   * Arc Testnet transaction this row reports on, when there is one. Kept as a
+   * Arc transaction this row reports on, when there is one. Kept as a
    * column rather than embedded in `detail` so the console can render a real
    * explorer link instead of leaving an operator to copy a hash out of prose.
    */

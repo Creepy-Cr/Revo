@@ -1,19 +1,31 @@
 /**
- * Live Arc Testnet chain connectivity via public JSON-RPC.
+ * Live Arc chain connectivity, per RPC provider.
  *
- * The console's "Arc Testnet" badge is backed by this module: we probe the
- * public RPC endpoint, verify the chain ID, and surface the latest block.
- * Results are cached briefly; failures are also cached (short TTL) so a
- * flapping RPC cannot stampede the upstream from dashboard polling. On
- * failure we serve the last good reading marked stale with connected=false -
- * we never fabricate chain data.
+ * The console's chain badge and the health endpoint are backed by this
+ * module: every configured provider is probed in parallel, the chain id of
+ * each answer is verified, and the first healthy provider in failover order
+ * supplies the headline numbers. Results are cached briefly; failures are
+ * also cached (short TTL) so a flapping provider cannot be stampeded by
+ * dashboard polling. On total failure the last good reading is served marked
+ * stale with connected=false - chain data is never fabricated.
  */
 
-export const ARC_TESTNET = {
-  network: "Arc Testnet",
-  chainId: 5042002,
-  rpcUrl: process.env["ARC_RPC_URL"] ?? "https://rpc.testnet.arc.network",
+import { ARC_CHAIN_ID, ARC_CHAIN_NAME } from "./arc-chain";
+import { probeArcEndpoints, type EndpointProbe } from "./arc-rpc";
+
+export const ARC_NETWORK = {
+  network: ARC_CHAIN_NAME,
+  chainId: ARC_CHAIN_ID,
 } as const;
+
+export interface ProviderStatus {
+  label: string;
+  reachable: boolean;
+  chainId: number | null;
+  blockNumber: number | null;
+  latencyMs: number | null;
+  error: string | null;
+}
 
 export interface ChainStatus {
   network: string;
@@ -23,6 +35,8 @@ export interface ChainStatus {
   blockNumber?: number;
   gasPriceWei?: string;
   latencyMs?: number;
+  /** Every provider in failover order; present whenever a probe ran. */
+  providers?: ProviderStatus[];
   stale: boolean;
   checkedAt: string;
 }
@@ -36,45 +50,12 @@ let lastResult: ChainStatus | null = null;
 let lastProbeAt = 0;
 let inFlight: Promise<ChainStatus> | null = null;
 
-interface RpcCall {
-  jsonrpc: "2.0";
-  id: number;
-  method: string;
-  params: unknown[];
-}
-
-async function rpcBatch(methods: string[]): Promise<string[]> {
-  const body: RpcCall[] = methods.map((method, i) => ({
-    jsonrpc: "2.0",
-    id: i + 1,
-    method,
-    params: [],
-  }));
-  const res = await fetch(ARC_TESTNET.rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Arc RPC responded ${res.status}`);
-  }
-  const json = (await res.json()) as Array<{
-    id: number;
-    result?: string;
-    error?: { message?: string };
-  }>;
-  if (!Array.isArray(json) || json.length !== methods.length) {
-    throw new Error("Arc RPC returned a malformed batch response");
-  }
-  const byId = new Map(json.map((entry) => [entry.id, entry]));
-  return methods.map((_, i) => {
-    const entry = byId.get(i + 1);
-    if (!entry || typeof entry.result !== "string") {
-      throw new Error(entry?.error?.message ?? "Arc RPC batch entry missing result");
-    }
-    return entry.result;
-  });
+/** Test seam: forget cached readings. */
+export function resetChainStatus(): void {
+  lastGood = null;
+  lastResult = null;
+  lastProbeAt = 0;
+  inFlight = null;
 }
 
 export async function getChainStatus(): Promise<ChainStatus> {
@@ -87,7 +68,7 @@ export async function getChainStatus(): Promise<ChainStatus> {
   }
 
   // Coalesce concurrent callers onto one probe so a cold start or outage
-  // recovery cannot stampede the RPC endpoint.
+  // recovery cannot stampede the providers.
   if (inFlight) {
     return inFlight;
   }
@@ -97,54 +78,66 @@ export async function getChainStatus(): Promise<ChainStatus> {
   return inFlight;
 }
 
+function toProviderStatus(probeResult: EndpointProbe): ProviderStatus {
+  // A provider answering on another chain is reported as unreachable for
+  // Revo's purposes: nothing may be read from it, whatever it says.
+  const wrongChain = probeResult.reachable && probeResult.chainId !== ARC_CHAIN_ID;
+  return {
+    label: probeResult.label,
+    reachable: probeResult.reachable && !wrongChain,
+    chainId: probeResult.chainId,
+    blockNumber: probeResult.blockNumber,
+    latencyMs: probeResult.latencyMs,
+    error: wrongChain
+      ? `answered for chain ${probeResult.chainId}, expected Arc (${ARC_CHAIN_ID})`
+      : probeResult.error,
+  };
+}
+
 async function probe(now: number): Promise<ChainStatus> {
   lastProbeAt = now;
+  const checkedAt = new Date().toISOString();
+  let providers: ProviderStatus[] = [];
+  let healthy: EndpointProbe | undefined;
   try {
-    const started = Date.now();
-    const [chainIdHex, blockHex, gasHex] = await rpcBatch([
-      "eth_chainId",
-      "eth_blockNumber",
-      "eth_gasPrice",
-    ]);
-    const latencyMs = Date.now() - started;
-    const chainId = Number.parseInt(chainIdHex ?? "", 16);
-    const blockNumber = Number.parseInt(blockHex ?? "", 16);
-    const gasPriceWei = BigInt(gasHex ?? "0x0").toString();
+    const probes = await probeArcEndpoints(RPC_TIMEOUT_MS);
+    providers = probes.map(toProviderStatus);
+    healthy = probes.find((p) => p.reachable && p.chainId === ARC_CHAIN_ID);
+  } catch (error) {
+    console.error("Arc RPC probe failed:", error);
+  }
 
-    if (!Number.isFinite(chainId) || !Number.isFinite(blockNumber)) {
-      throw new Error("Arc RPC returned non-numeric chain data");
-    }
-    if (chainId !== ARC_TESTNET.chainId) {
-      throw new Error(
-        `RPC endpoint is on chain ${chainId}, expected Arc Testnet ${ARC_TESTNET.chainId}`,
-      );
-    }
-
+  if (healthy && healthy.blockNumber !== null && healthy.gasPriceWei !== null) {
     lastGood = {
-      network: ARC_TESTNET.network,
-      expectedChainId: ARC_TESTNET.chainId,
+      network: ARC_NETWORK.network,
+      expectedChainId: ARC_NETWORK.chainId,
       connected: true,
-      chainId,
-      blockNumber,
-      gasPriceWei,
-      latencyMs,
+      chainId: healthy.chainId ?? ARC_CHAIN_ID,
+      blockNumber: healthy.blockNumber,
+      gasPriceWei: healthy.gasPriceWei,
+      latencyMs: healthy.latencyMs ?? 0,
+      providers,
       stale: false,
-      checkedAt: new Date().toISOString(),
+      checkedAt,
     };
     lastResult = lastGood;
     return lastGood;
-  } catch (error) {
-    const checkedAt = new Date().toISOString();
-    lastResult = lastGood
-      ? { ...lastGood, connected: false, stale: true, checkedAt }
-      : {
-          network: ARC_TESTNET.network,
-          expectedChainId: ARC_TESTNET.chainId,
-          connected: false,
-          stale: false,
-          checkedAt,
-        };
-    console.error("Arc Testnet RPC probe failed:", error);
-    return lastResult;
   }
+
+  lastResult = lastGood
+    ? { ...lastGood, connected: false, stale: true, providers, checkedAt }
+    : {
+        network: ARC_NETWORK.network,
+        expectedChainId: ARC_NETWORK.chainId,
+        connected: false,
+        providers,
+        stale: false,
+        checkedAt,
+      };
+  console.error(
+    "No Arc RPC provider answered for chain %d: %s",
+    ARC_CHAIN_ID,
+    providers.map((p) => `${p.label}=${p.error ?? "ok"}`).join(", "),
+  );
+  return lastResult;
 }

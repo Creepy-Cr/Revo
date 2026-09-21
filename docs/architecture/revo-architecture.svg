@@ -24,7 +24,7 @@
   <rect x="40" y="36" width="6" height="60" rx="3" fill="url(#hg)"/>
   <text x="66" y="70" font-size="30" font-weight="700" fill="#FFFFFF" letter-spacing="1">REVO</text>
   <text x="66" y="92" font-size="14" fill="#B8B8B8">Autonomous Treasury Intelligence · system architecture</text>
-  <text x="1640" y="62" font-size="13" text-anchor="end" fill="#FC3B00" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace">Built on Arc · Arc Testnet · chainId 5042002</text>
+  <text x="1640" y="62" font-size="13" text-anchor="end" fill="#FC3B00" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace">Built on Arc · mainnet · chainId 5042</text>
   <text x="1640" y="84" font-size="12" text-anchor="end" fill="#7A7A7A" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace">native USDC 0x3600…0000 · 6 decimals · gas paid in USDC</text>
   <line x1="40" y1="116" x2="1640" y2="116" stroke="#212121" stroke-width="1"/>
 
@@ -83,12 +83,12 @@
 
   <rect x="826" y="556" width="332" height="76" rx="10" fill="#111111" stroke="#2A2A2A"/>
   <text x="844" y="584" font-size="15" font-weight="600" fill="#FFFFFF">Rebalance Plan</text>
-  <text x="844" y="605" font-size="12" fill="#8A8A8A">USDC ↔ EURC sleeve · cirBTC held, not routed</text>
+  <text x="844" y="605" font-size="12" fill="#8A8A8A">USDC ↔ EURC sleeves</text>
   <text x="844" y="622" font-size="12" fill="#8A8A8A">sized from live custody balances</text>
 
   <!-- ================= 03 SETTLEMENT ================= -->
   <rect x="40" y="678" width="1160" height="384" rx="12" fill="#0A0A0A" stroke="#FC3B00" stroke-opacity="0.3"/>
-  <text x="62" y="708" font-size="12" font-weight="600" fill="#FC3B00" letter-spacing="1.6">03 · SETTLEMENT PLANE · Arc Testnet · REAL ON-CHAIN</text>
+  <text x="62" y="708" font-size="12" font-weight="600" fill="#FC3B00" letter-spacing="1.6">03 · SETTLEMENT PLANE · Arc MAINNET · REAL ON-CHAIN</text>
 
   <text x="62" y="740" font-size="12" font-weight="600" fill="#8A8A8A" letter-spacing="1.2">DEPOSIT</text>
   <rect x="62" y="752" width="250" height="58" rx="9" fill="#111111" stroke="#2A2A2A"/>
@@ -139,11 +139,11 @@
 
   <text x="62" y="968" font-size="12" font-weight="600" fill="#8A8A8A" letter-spacing="1.2">REBALANCE</text>
   <rect x="62" y="980" width="200" height="58" rx="9" fill="#111111" stroke="#2A2A2A"/>
-  <text x="76" y="1004" font-size="13" font-weight="600" fill="#FFFFFF">Synthra quote</text>
+  <text x="76" y="1004" font-size="13" font-weight="600" fill="#FFFFFF">Uniswap v4 quote</text>
   <text x="76" y="1023" font-size="11.5" fill="#8A8A8A">quoter · min output · fee tier</text>
 
   <rect x="292" y="980" width="200" height="58" rx="9" fill="#111111" stroke="#2A2A2A"/>
-  <text x="306" y="1004" font-size="13" font-weight="600" fill="#FFFFFF">Simulate</text>
+  <text x="306" y="1004" font-size="13" font-weight="600" fill="#FFFFFF">Preflight</text>
   <text x="306" y="1023" font-size="11.5" fill="#8A8A8A">eth_call · pause re-checked</text>
 
   <rect x="522" y="980" width="200" height="58" rx="9" fill="#111111" stroke="#2A2A2A"/>
@@ -189,7 +189,7 @@
 
   <circle cx="1252" cy="200" r="3" fill="#FC3B00"/><text x="1266" y="205" font-size="13" fill="#D8D8D8">CoinGecko market data</text>
   <circle cx="1252" cy="234" r="3" fill="#FC3B00"/><text x="1266" y="239" font-size="13" fill="#D8D8D8">USDC peg deviation</text>
-  <circle cx="1252" cy="268" r="3" fill="#FC3B00"/><text x="1266" y="273" font-size="13" fill="#D8D8D8">EURC and cirBTC composites</text>
+  <circle cx="1252" cy="268" r="3" fill="#FC3B00"/><text x="1266" y="273" font-size="13" fill="#D8D8D8">EURC market composite</text>
   <circle cx="1252" cy="302" r="3" fill="#FC3B00"/><text x="1266" y="307" font-size="13" fill="#D8D8D8">Arc whale watch · USDC transfers</text>
   <circle cx="1252" cy="336" r="3" fill="#FC3B00"/><text x="1266" y="341" font-size="13" fill="#D8D8D8">GitHub issuer repository activity</text>
   <circle cx="1252" cy="370" r="3" fill="#FC3B00"/><text x="1266" y="375" font-size="13" fill="#D8D8D8">Crypto news RSS · X and Discord (optional)</text>
@@ -228,17 +228,17 @@
   <text x="1246" y="952" font-size="12" font-weight="600" fill="#FC3B00" letter-spacing="1.6">LEGEND</text>
 
   <line x1="1246" y1="978" x2="1290" y2="978" stroke="#FC3B00" stroke-width="2" marker-end="url(#ar)"/>
-  <text x="1302" y="983" font-size="13" fill="#D8D8D8">Real Arc Testnet transaction or decision path</text>
+  <text x="1302" y="983" font-size="13" fill="#D8D8D8">Real Arc mainnet transaction or decision path</text>
 
   <line x1="1246" y1="1008" x2="1290" y2="1008" stroke="#6B6B6B" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ag)"/>
   <text x="1302" y="1013" font-size="13" fill="#D8D8D8">Read-only input · no execution authority</text>
 
   <rect x="1246" y="1032" width="372" height="156" rx="9" fill="#0D0D0D" stroke="#2A2A2A"/>
   <text x="1262" y="1056" font-size="11.5" fill="#B8B8B8">Deposits, withdrawals and approved rebalances are</text>
-  <text x="1262" y="1075" font-size="11.5" fill="#B8B8B8">real Arc Testnet transactions. Swaps route through</text>
-  <text x="1262" y="1094" font-size="11.5" fill="#B8B8B8">Synthra and are sized from live custody balances.</text>
+  <text x="1262" y="1075" font-size="11.5" fill="#B8B8B8">real Arc mainnet transactions. Swaps route through</text>
+  <text x="1262" y="1094" font-size="11.5" fill="#B8B8B8">Uniswap v4 and use live custody balances.</text>
   <text x="1262" y="1113" font-size="11.5" fill="#B8B8B8">The chain guard rejects any chainId other than</text>
-  <text x="1262" y="1132" font-size="11.5" fill="#B8B8B8">5042002 before every read and every broadcast.</text>
+  <text x="1262" y="1132" font-size="11.5" fill="#B8B8B8">5042 before every read and every broadcast.</text>
   <text x="1262" y="1151" font-size="11.5" fill="#B8B8B8">The custody key is unsealed in memory for a single</text>
   <text x="1262" y="1170" font-size="11.5" fill="#B8B8B8">signing call and is never persisted in plaintext.</text>
 </svg>

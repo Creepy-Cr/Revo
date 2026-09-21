@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 
 import { Beam, Body, EXPO_OUT, FONT_DISPLAY, FONT_MONO, ORANGE, SceneRoot, Words } from './shared';
 
-const CHIPS = ['Arc Testnet', 'USDC / EURC', 'Policy-bound execution'];
+const CHIPS = ['Arc', 'USDC / EURC', 'Policy-bound execution'];
 
 // The reveal. Beam on the right, the definition of Revo on the left.
 export function Scene1() {
@@ -40,7 +40,7 @@ export function Scene1() {
         <div style={{ height: 44 }} />
 
         <Body delay={3.0} size={33} width={840} color="rgba(255,255,255,0.72)">
-          Revo is an AI-managed treasury for DAOs on Arc Testnet. It reads the market, proposes
+          Revo is an AI-managed treasury for DAOs on Arc. It reads the market, proposes
           moves and settles them <span style={{ whiteSpace: 'nowrap' }}>on-chain</span>, bound by policy you write.
         </Body>
 

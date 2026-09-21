@@ -134,7 +134,7 @@ function AgentChatImpl() {
             <p className="text-sm text-white/70 leading-relaxed max-w-sm">
               I am <span className="text-white font-semibold">{AGENT_NAME}</span>, the treasury
               agent. Ask me why I proposed, scored, or executed anything. I answer only from the
-              live testnet treasury state.
+              live Arc mainnet treasury state.
             </p>
             {session ? (
               <div className="flex flex-col gap-2 w-full mt-4">

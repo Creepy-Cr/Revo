@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 /**
- * Guards for LLM-backed routes. The API is a public, unauthenticated testnet
+ * Guards for LLM-backed routes. Each request to the authenticated mainnet API
  * demo, and every request to these routes spends real inference budget via
  * the project's LLM integration - so each route gets:
  *

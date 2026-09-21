@@ -30,8 +30,6 @@ const REGISTRY_SYMBOLS = Object.keys(ARC_TOKENS);
 
 const QUOTE: MarketQuote = {
   usdcUsd: 0.9999,
-  btcUsd: 80_000,
-  btcChange24h: 2.4,
   eurUsd: 1.16,
   eurChange24h: -0.3,
   fetchedAt: Date.now(),
@@ -202,8 +200,8 @@ describe("signals feed asset scoping", () => {
   });
 
   it("drops a token's card rather than scoring it, when its sources are all down", async () => {
-    // No market quote means no BTC or EUR reference price. The cirBTC and EURC
-    // cards must disappear instead of being built from a fabricated number.
+    // No market quote means no EUR reference price. The EURC card must
+    // disappear instead of being built from a fabricated number.
     const signals = await buildWith({
       market: false,
       github: false,
