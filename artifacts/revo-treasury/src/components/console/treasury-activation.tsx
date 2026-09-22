@@ -15,7 +15,7 @@ export function TreasuryActivation({ onNavigate }: { onNavigate: (view: string) 
       meta: 'ARC MAINNET / REAL FUNDS',
       action: (
         <a
-          href="https://arc-scan.org"
+          href="https://explorer.arc.io"
           target="_blank"
           rel="noreferrer"
           data-testid="link-activation-explorer"

@@ -92,13 +92,13 @@ the reason a treasury product like this can be simple:
 | --- | --- |
 | Chain id | `5042` |
 | RPC | Multiple public Arc mainnet providers with automatic failover; optional `ARC_RPC_URLS` supplies a comma-separated override list |
-| Explorer | [arc-scan.org](https://arc-scan.org) |
-| Native USDC | [`0x3600000000000000000000000000000000000000`](https://arc-scan.org/address/0x3600000000000000000000000000000000000000) (6 decimals) |
-| EURC | [`0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`](https://arc-scan.org/address/0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1) (6 decimals) |
-| syrupUSDC | [`0x0dC6b79F3c3854E4d74514fD4d29BE6c96Beee39`](https://arc-scan.org/address/0x0dC6b79F3c3854E4d74514fD4d29BE6c96Beee39) (6 decimals, Maple) |
-| cirBTC | [`0x171A4217b86A807A64eB94757Db6849fb4bDbAA0`](https://arc-scan.org/address/0x171A4217b86A807A64eB94757Db6849fb4bDbAA0) (8 decimals, Circle) |
-| WETH | [`0x128cC466B61f542da60c70e3aA11c10e19B84EDB`](https://arc-scan.org/address/0x128cC466B61f542da60c70e3aA11c10e19B84EDB) (18 decimals, Arc bridge) |
-| wARS | [`0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D`](https://arc-scan.org/address/0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D) (held only, never traded) |
+| Explorer | [explorer.arc.io](https://explorer.arc.io) |
+| Native USDC | [`0x3600000000000000000000000000000000000000`](https://explorer.arc.io/address/0x3600000000000000000000000000000000000000) (6 decimals) |
+| EURC | [`0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`](https://explorer.arc.io/address/0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1) (6 decimals) |
+| syrupUSDC | [`0x0dC6b79F3c3854E4d74514fD4d29BE6c96Beee39`](https://explorer.arc.io/address/0x0dC6b79F3c3854E4d74514fD4d29BE6c96Beee39) (6 decimals, Maple) |
+| cirBTC | [`0x171A4217b86A807A64eB94757Db6849fb4bDbAA0`](https://explorer.arc.io/address/0x171A4217b86A807A64eB94757Db6849fb4bDbAA0) (8 decimals, Circle) |
+| WETH | [`0x128cC466B61f542da60c70e3aA11c10e19B84EDB`](https://explorer.arc.io/address/0x128cC466B61f542da60c70e3aA11c10e19B84EDB) (18 decimals, Arc bridge) |
+| wARS | [`0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D`](https://explorer.arc.io/address/0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D) (held only, never traded) |
 | Pinned pools | Every pool has USDC on one side and no hook: EURC/USDC (`fee 10, 100, 500, 3000, 10000`), syrupUSDC/USDC (`fee 500`), cirBTC/USDC (`fee 3000`), WETH/USDC (`fee 2500`), wARS/USDC (`fee 100`, read only). Every rebalance is one swap per proposal; a target that needs more than one leg (any risk-to-risk move goes through USDC) is walked leg by leg, each settled proposal saying whether the target is reached and drafting the next leg from live balances. Managed mode approves each leg; Autonomous mode auto-approves them under the same gates, at most 12 an hour per policy. |
 | Swap venue | Uniswap v4: PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`, V4Quoter `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`, StateView `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b`, UniversalRouter `0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1`, Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
 | Token registry | [Tower Exchange](https://docs.tower.exchange) public API, used as a secondary cross-check of token addresses; it never authorises a trade |
@@ -110,21 +110,21 @@ Useful Arc links: [Arc docs](https://docs.arc.network) ·
 
 ### Proof of mainnet execution
 
-Everything below is public and can be checked on [arc-scan.org](https://arc-scan.org) or over
+Everything below is public and can be checked on [explorer.arc.io](https://explorer.arc.io) or over
 any Arc mainnet RPC. On 22 September 2026 the product's own proposal path (approve, size from
 live balances, quote the pool, check the independent price, simulate, sign, confirm, reconcile)
 executed one buy and one sell-back through each pinned pool from a treasury holding about
 3 USDC. Every fill landed at quote and the whole round trip cost about 0.07 USDC in gas.
 
 Custody wallet (the `from` address on every transaction):
-[`0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0`](https://arc-scan.org/address/0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0)
+[`0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0`](https://explorer.arc.io/address/0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0)
 
 | Pool | Buy | Sell back |
 | --- | --- | --- |
-| EURC/USDC | [`0xd31f6ae3`](https://arc-scan.org/tx/0xd31f6ae3dac37e88aae4e153d7ba6f70ec426998da08a80d9edee885623319aa) | [`0xb12bc4a7`](https://arc-scan.org/tx/0xb12bc4a79d88f0688b052e3f72efee151b36735d3d81af690b7cfe209345448b) |
-| syrupUSDC/USDC | [`0xe4409f4b`](https://arc-scan.org/tx/0xe4409f4b7f76d57ddd30544aeb15373a3d0240c8e97c0160ad59acb5dff7489f) | [`0x8d2cddbb`](https://arc-scan.org/tx/0x8d2cddbb7ebfb7e9d593c88471e78c8fd708b21f2dfd195d608c819186997d06) |
-| cirBTC/USDC | [`0x4aedd907`](https://arc-scan.org/tx/0x4aedd907a11261240a08720094acb2124d3a364290af94e4423c28bbc69cf8d8) | [`0x5e784552`](https://arc-scan.org/tx/0x5e784552cc9778326ff5fab7a4e61d4a8b1ecc260e794d482c9152c1fc5a0af9) |
-| WETH/USDC | [`0xd77b2884`](https://arc-scan.org/tx/0xd77b28849cb74226e4617a52e005f9ab807f04a459a289adb85152c1602f6d5b) | [`0x82ebf6a9`](https://arc-scan.org/tx/0x82ebf6a9338ecdc7ea49495fc1ed39170bb2172b87f2db019a937105726a8323) |
+| EURC/USDC | [`0xd31f6ae3`](https://explorer.arc.io/tx/0xd31f6ae3dac37e88aae4e153d7ba6f70ec426998da08a80d9edee885623319aa) | [`0xb12bc4a7`](https://explorer.arc.io/tx/0xb12bc4a79d88f0688b052e3f72efee151b36735d3d81af690b7cfe209345448b) |
+| syrupUSDC/USDC | [`0xe4409f4b`](https://explorer.arc.io/tx/0xe4409f4b7f76d57ddd30544aeb15373a3d0240c8e97c0160ad59acb5dff7489f) | [`0x8d2cddbb`](https://explorer.arc.io/tx/0x8d2cddbb7ebfb7e9d593c88471e78c8fd708b21f2dfd195d608c819186997d06) |
+| cirBTC/USDC | [`0x4aedd907`](https://explorer.arc.io/tx/0x4aedd907a11261240a08720094acb2124d3a364290af94e4423c28bbc69cf8d8) | [`0x5e784552`](https://explorer.arc.io/tx/0x5e784552cc9778326ff5fab7a4e61d4a8b1ecc260e794d482c9152c1fc5a0af9) |
+| WETH/USDC | [`0xd77b2884`](https://explorer.arc.io/tx/0xd77b28849cb74226e4617a52e005f9ab807f04a459a289adb85152c1602f6d5b) | [`0x82ebf6a9`](https://explorer.arc.io/tx/0x82ebf6a9338ecdc7ea49495fc1ed39170bb2172b87f2db019a937105726a8323) |
 
 Each transaction is a Uniswap v4 swap through the UniversalRouter listed above, paid for in
 USDC, with the swap's transfer logs used to measure the realised fill. Nothing here is a
@@ -378,7 +378,7 @@ local setup, conventions and the areas that need extra care. Please follow the
 - Product docs: [therevo.xyz/docs](https://therevo.xyz/docs)
 - Risk disclosure: [therevo.xyz/risk](https://therevo.xyz/risk)
 - X: [@RevoLabsHQ](https://x.com/RevoLabsHQ)
-- Arc: [arc.network](https://arc.network) · [docs](https://docs.arc.network) · [explorer](https://arc-scan.org)
+- Arc: [arc.network](https://arc.network) · [docs](https://docs.arc.network) · [explorer](https://explorer.arc.io)
 - Circle: [Gateway](https://developers.circle.com/gateway) · [developer docs](https://developers.circle.com)
 - Venue and registry: [Uniswap v4 Arc deployments](https://docs.uniswap.org/contracts/v4/deployments) · [Tower Exchange](https://docs.tower.exchange)
 - Model: [Anthropic](https://docs.anthropic.com)

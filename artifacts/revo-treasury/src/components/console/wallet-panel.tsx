@@ -344,7 +344,7 @@ function ConnectedPanel({
           {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           <span>TREASURY {shortAddress(info.treasuryAddress)}</span>
         </button>
-        <a href="https://arc-scan.org" target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
+        <a href="https://explorer.arc.io" target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
           <ExternalLink className="w-3.5 h-3.5" /> ARC EXPLORER
         </a>
       </div>

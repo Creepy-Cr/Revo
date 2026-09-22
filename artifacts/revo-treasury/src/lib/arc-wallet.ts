@@ -53,7 +53,7 @@ export const usdcAbi = parseAbi([
 
 export const ARC_CHAIN_ID = 5042;
 export const ARC_CHAIN_NAME = 'Arc';
-export const ARC_EXPLORER_URL = 'https://arc-scan.org';
+export const ARC_EXPLORER_URL = 'https://explorer.arc.io';
 
 export function buildArcChain(info: ChainParams): Chain {
   return defineChain({
@@ -63,7 +63,7 @@ export function buildArcChain(info: ChainParams): Chain {
     // app uses for all amounts) uses info.usdcDecimals (6).
     nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
     rpcUrls: { default: { http: [info.rpcUrl] } },
-    blockExplorers: { default: { name: 'Arcscan', url: ARC_EXPLORER_URL } },
+    blockExplorers: { default: { name: 'Arc Explorer', url: ARC_EXPLORER_URL } },
     testnet: false,
   });
 }

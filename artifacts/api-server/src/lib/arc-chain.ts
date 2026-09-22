@@ -54,7 +54,7 @@ export const BROWSER_RPC_URL: string = DEFAULT_ARC_RPC_URLS[0]!;
 /** USDC is Arc's native asset; this is its ERC-20 interface (6 decimals). */
 export const USDC_ADDRESS: Address = "0x3600000000000000000000000000000000000000";
 export const USDC_DECIMALS = 6;
-export const EXPLORER_URL = "https://arc-scan.org";
+export const EXPLORER_URL = "https://explorer.arc.io";
 
 /** Micro-USDC (6-decimal integer) conversions. */
 export const toMicroUsdc = (amount: number): bigint => BigInt(Math.round(amount * 1e6));
@@ -73,7 +73,7 @@ export const arc = defineChain({
   name: ARC_CHAIN_NAME,
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: { default: { http: arcRpcEndpoints().map((endpoint) => endpoint.url) } },
-  blockExplorers: { default: { name: "Arcscan", url: EXPLORER_URL } },
+  blockExplorers: { default: { name: "Arc Explorer", url: EXPLORER_URL } },
 });
 
 /** Typed on-chain failure so routes can map causes to honest status codes. */

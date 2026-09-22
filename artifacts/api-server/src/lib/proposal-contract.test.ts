@@ -35,7 +35,7 @@ describe("proposal response contract", () => {
       {
         id: "p-1", title: "t", summary: "s", status: "executed",
         createdAt: new Date().toISOString(), action: "a", safetyChecks: [], command: "c",
-        executionTxHash: "0xabc", explorerTxUrl: "https://arc-scan.org/tx/0xabc",
+        executionTxHash: "0xabc", explorerTxUrl: "https://explorer.arc.io/tx/0xabc",
       },
     ]);
     expect(parsed[0]!.explorerTxUrl).toContain("0xabc");
