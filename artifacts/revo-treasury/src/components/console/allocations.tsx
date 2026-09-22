@@ -20,8 +20,10 @@ function badgeFor(a: Allocation): { label: string; className: string; dot: strin
     };
   }
   if (!a.tradable) {
+    // Held and priced, never traded. The reason is in the tooltip; it is a
+    // Revo decision about the pool or its reference price, not always depth.
     return {
-      label: 'NO LIQUIDITY',
+      label: 'NOT TRADED',
       className: 'text-white/40',
       dot: 'bg-white/40',
     };

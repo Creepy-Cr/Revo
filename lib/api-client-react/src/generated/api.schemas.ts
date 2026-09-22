@@ -54,6 +54,7 @@ export interface ChainParams {
   /** Chain id as a 0x-prefixed hex string for wallet RPC calls */
   chainIdHex: string;
   chainName: string;
+  /** Arc's public RPC endpoint for the browser's add-chain prompt. Never the server's configured provider list. */
   rpcUrl: string;
   /** USDC ERC-20 interface contract address on Arc */
   usdcAddress: string;
@@ -290,6 +291,7 @@ export interface TreasuryWalletInfo {
   /** Chain id as a 0x-prefixed hex string for wallet RPC calls */
   chainIdHex: string;
   chainName: string;
+  /** Arc's public RPC endpoint for the browser's add-chain prompt. Never the server's configured provider list. */
   rpcUrl: string;
   /** USDC ERC-20 interface contract address on Arc */
   usdcAddress: string;
@@ -557,6 +559,11 @@ export interface OperatorRoleInput {
   role: OperatorRoleInputRole;
 }
 
+export type SwapVenueTokenPoolsItem = {
+  feeTier: number;
+  tickSpacing: number;
+};
+
 export interface SwapVenueToken {
   symbol: string;
   name: string;
@@ -564,6 +571,12 @@ export interface SwapVenueToken {
   decimals: number;
   /** stable | risk */
   role: string;
+  /** Who stands behind the token, as verified from issuer documentation */
+  issuer: string;
+  /** Where the independent reference price for this token comes from */
+  priceSource: string;
+  /** Hook-less Uniswap v4 pools against USDC that Revo has measured and pinned for this token. Empty for USDC itself. */
+  pools: SwapVenueTokenPoolsItem[];
   /** Whether Revo will route a trade in this token. False is a Revo decision about pool quality, not a venue capability. */
   tradable: boolean;
   /** Why the token is held and priced but never traded */
@@ -571,11 +584,15 @@ export interface SwapVenueToken {
 }
 
 export type SwapVenueStatusLivePoolsItem = {
+  /** The pool's pair, always against USDC, for example "EURC/USDC" */
+  pair: string;
   poolId: string;
   feeTier: number;
   tickSpacing: number;
   /** In-range liquidity as reported by StateView, base units */
   liquidity: string;
+  /** Whether Revo will route a trade through this pool */
+  tradable: boolean;
 };
 
 export interface SwapVenueStatus {
@@ -600,7 +617,7 @@ export interface SwapVenueStatus {
      * @nullable
      */
   blockNumber: string | null;
-  /** Initialised USDC/EURC pools with in-range liquidity right now */
+  /** Pinned pools that are initialised with in-range liquidity right now */
   livePools: SwapVenueStatusLivePoolsItem[];
   /** True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed. */
   swapEnabled: boolean;

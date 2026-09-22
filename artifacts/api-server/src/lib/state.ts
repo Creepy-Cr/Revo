@@ -28,11 +28,19 @@ import { getMode, MODE_LABEL, type OperatingMode } from "./operating-mode";
 const ALLOCATION_LABELS: Record<string, string> = {
   USDC: "Liquid reserve",
   EURC: "Euro exposure",
+  syrupUSDC: "Maple yield",
+  cirBTC: "Bitcoin exposure",
+  WETH: "Ether exposure",
+  wARS: "Peso exposure",
 };
 
 const ALLOCATION_TONES: Record<string, string> = {
   USDC: "cyan",
   EURC: "violet",
+  syrupUSDC: "emerald",
+  cirBTC: "amber",
+  WETH: "sky",
+  wARS: "rose",
 };
 
 const SNAPSHOT_THROTTLE_MS = 5 * 60_000;
@@ -109,7 +117,7 @@ async function initializeState(
     await logActivity(
       treasuryId,
       "Treasury initialized",
-      "Treasury opened empty on Arc mainnet. Every balance shown from here on comes from real on-chain USDC and EURC holdings.",
+      "Treasury opened empty on Arc mainnet. Every balance shown from here on comes from real on-chain token holdings in the custody wallet.",
       "executed",
     );
     return state;
@@ -226,7 +234,7 @@ export async function computeDashboard(
   // empty".
   const rows = custody.ok
     ? custody.holdings.map((h) => {
-        const price = referencePriceFor(h.coingeckoId, quote);
+        const price = referencePriceFor(h.priceId, quote);
         return {
           symbol: h.symbol,
           name: ALLOCATION_LABELS[h.symbol] ?? h.name,
@@ -256,7 +264,7 @@ export async function computeDashboard(
   // be priced. Anything less and the figure understates the treasury, so it
   // must not be snapshotted, charted as a change, or read as a drawdown.
   const unpriced = custody.holdings.filter(
-    (h) => h.units > 0 && referencePriceFor(h.coingeckoId, quote) === undefined,
+    (h) => h.units > 0 && referencePriceFor(h.priceId, quote) === undefined,
   );
   const valuation = custody.ok
     ? unpriced.length === 0

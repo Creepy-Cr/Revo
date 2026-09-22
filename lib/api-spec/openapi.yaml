@@ -1424,7 +1424,7 @@ components:
           enum: [viewer, strategist, approver, guardian, admin]
     SwapVenueToken:
       type: object
-      required: [symbol, name, address, decimals, role, tradable]
+      required: [symbol, name, address, decimals, role, issuer, priceSource, pools, tradable]
       properties:
         symbol:
           type: string
@@ -1437,6 +1437,25 @@ components:
         role:
           type: string
           description: stable | risk
+        issuer:
+          type: string
+          description: Who stands behind the token, as verified from issuer documentation
+        priceSource:
+          type: string
+          description: Where the independent reference price for this token comes from
+        pools:
+          type: array
+          description: >-
+            Hook-less Uniswap v4 pools against USDC that Revo has measured and
+            pinned for this token. Empty for USDC itself.
+          items:
+            type: object
+            required: [feeTier, tickSpacing]
+            properties:
+              feeTier:
+                type: number
+              tickSpacing:
+                type: number
         tradable:
           type: boolean
           description: >-
@@ -1497,11 +1516,14 @@ components:
           description: Arc block height at the time of the check
         livePools:
           type: array
-          description: Initialised USDC/EURC pools with in-range liquidity right now
+          description: Pinned pools that are initialised with in-range liquidity right now
           items:
             type: object
-            required: [poolId, feeTier, tickSpacing, liquidity]
+            required: [pair, poolId, feeTier, tickSpacing, liquidity, tradable]
             properties:
+              pair:
+                type: string
+                description: The pool's pair, always against USDC, for example "EURC/USDC"
               poolId:
                 type: string
               feeTier:
@@ -1511,6 +1533,9 @@ components:
               liquidity:
                 type: string
                 description: In-range liquidity as reported by StateView, base units
+              tradable:
+                type: boolean
+                description: Whether Revo will route a trade through this pool
         swapEnabled:
           type: boolean
           description: >-

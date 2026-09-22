@@ -45,7 +45,7 @@ const sections: DocSection[] = [
     body: (
       <>
         <DocNote label="Core fact">
-          The Service operates on Arc mainnet and manages <strong>real USDC and EURC</strong>.
+          The Service operates on Arc mainnet and manages <strong>real USDC, EURC, syrupUSDC, cirBTC and WETH</strong>, and holds wARS without trading it.
           Deposits, withdrawals, and approved trades can result in financial loss.
         </DocNote>
         <DocList

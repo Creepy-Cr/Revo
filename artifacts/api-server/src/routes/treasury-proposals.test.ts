@@ -36,7 +36,8 @@ import {
   treasuryStateTable,
   type PolicyRules,
 } from "@workspace/db";
-import { ARC_TOKENS } from "../lib/arc-tokens";
+import { ARC_TOKENS, priceIdOf } from "../lib/arc-tokens";
+import { quoteFor } from "../lib/market-fixtures";
 import {
   getSecurityControls,
   setEmergencyPause,
@@ -60,8 +61,15 @@ process.env.CUSTODY_MASTER_SECRET ??= "test-only-custody-master-secret";
  * through this stub, so its call count IS the number of trades attempted.
  */
 const settleRebalance = vi.fn();
+/**
+ * The planner settlement re-runs after a leg confirms, to learn whether the
+ * target is reached. Single-leg targets throughout these tests, so it always
+ * says so; the multi-leg continuation has its own suite in the settlement
+ * tests.
+ */
+const planRebalanceLeg = vi.fn();
 
-vi.mock("../lib/rebalance-execution", () => ({ settleRebalance }));
+vi.mock("../lib/rebalance-execution", () => ({ settleRebalance, planRebalanceLeg }));
 
 vi.mock("../lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/auth")>();
@@ -86,15 +94,12 @@ vi.mock("../lib/market", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/market")>();
   return {
     ...actual,
-    getMarketQuote: vi.fn(async () => ({
-      usdcUsd: 1,
-      eurUsd: 1.16,
-      eurChange24h: 0,
-      btcUsd: 80_000,
-      btcChange24h: 0,
-      fetchedAt: Date.now(),
-      stale: false,
-    })),
+    getMarketQuote: vi.fn(async () =>
+      quoteFor(
+        { USDC: 1, EURC: 1.16, syrupUSDC: 1.1, cirBTC: 110_000, WETH: 4_000, wARS: 0.00066 },
+        { change24hBySymbol: { EURC: 0 } },
+      ),
+    ),
   };
 });
 
@@ -117,7 +122,7 @@ vi.mock("../lib/holdings", async (importOriginal) => {
           role: token.role,
           tradable: token.tradable,
           ...(token.untradableReason ? { untradableReason: token.untradableReason } : {}),
-          coingeckoId: token.coingeckoId,
+          priceId: priceIdOf(token.price),
           units,
           raw: (BigInt(units) * 10n ** BigInt(token.decimals)).toString(),
         };
@@ -333,6 +338,8 @@ afterEach(async () => {
   for (const open of openGates.splice(0)) open.release();
   await drainProposalSettlements();
   settleRebalance.mockReset();
+  planRebalanceLeg.mockReset();
+  planRebalanceLeg.mockResolvedValue({ kind: "nothing-to-do", reason: "on target" });
 });
 
 afterAll(async () => {
@@ -508,6 +515,31 @@ describe("approving a policy in autonomous mode", () => {
     const [proposal] = await proposalsForPolicy(policyId);
     expect(proposal).toMatchObject({ status: "pending", decidedAt: null });
     expect(settleRebalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds a plan that sells an unnamed holding for an operator instead of auto-approving it", async () => {
+    // The "Euro sleeve" policy names only EURC. With cirBTC in the wallet the
+    // engine's plan sells it to zero, and that is not a trade the policy
+    // describes, so Autonomous mode drafts it as pending and settles nothing.
+    const { readCustodyHoldings } = await import("../lib/holdings");
+    const base = await (readCustodyHoldings as unknown as () => Promise<{ holdings: { symbol: string; units: number; raw: string }[] }>)();
+    vi.mocked(readCustodyHoldings).mockResolvedValueOnce({
+      ...base,
+      holdings: base.holdings.map((h) =>
+        h.symbol === "cirBTC" ? { ...h, units: 0.001, raw: "100000" } : h,
+      ),
+    } as Awaited<ReturnType<typeof readCustodyHoldings>>);
+    const policyId = await seedPolicyDraft();
+
+    const response = await api(`/treasury/policies/${policyId}/approve`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await drainProposalSettlements();
+    const [proposal] = await proposalsForPolicy(policyId);
+    expect(proposal).toMatchObject({ status: "pending", decidedAt: null });
+    expect(proposal!.targetAllocations).toContainEqual({ symbol: "cirBTC", percentage: 0 });
+    expect(proposal!.summary).toContain("cirBTC");
+    expect(settleRebalance).not.toHaveBeenCalled();
   });
 
   it("activates the policy even when the settlement throws outright", async () => {

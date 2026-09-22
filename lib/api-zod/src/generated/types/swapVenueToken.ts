@@ -5,6 +5,7 @@
  * Revo Treasury API (Arc mainnet)
  * OpenAPI spec version: 0.1.0
  */
+import type { SwapVenueTokenPoolsItem } from './swapVenueTokenPoolsItem';
 
 export interface SwapVenueToken {
   symbol: string;
@@ -13,6 +14,12 @@ export interface SwapVenueToken {
   decimals: number;
   /** stable | risk */
   role: string;
+  /** Who stands behind the token, as verified from issuer documentation */
+  issuer: string;
+  /** Where the independent reference price for this token comes from */
+  priceSource: string;
+  /** Hook-less Uniswap v4 pools against USDC that Revo has measured and pinned for this token. Empty for USDC itself. */
+  pools: SwapVenueTokenPoolsItem[];
   /** Whether Revo will route a trade in this token. False is a Revo decision about pool quality, not a venue capability. */
   tradable: boolean;
   /** Why the token is held and priced but never traded */

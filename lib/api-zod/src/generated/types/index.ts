@@ -51,6 +51,7 @@ export * from './swapQuoteInput';
 export * from './swapVenueStatus';
 export * from './swapVenueStatusLivePoolsItem';
 export * from './swapVenueToken';
+export * from './swapVenueTokenPoolsItem';
 export * from './treasuryCommandInput';
 export * from './treasuryDashboard';
 export * from './treasuryDashboardValuation';

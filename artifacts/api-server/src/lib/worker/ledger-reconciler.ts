@@ -36,7 +36,7 @@ export async function processTreasury(
   }
   let chainValue = 0;
   for (const holding of custody.holdings) {
-    const price = referencePriceFor(holding.coingeckoId, quote);
+    const price = referencePriceFor(holding.priceId, quote);
     if (holding.units > 0 && price === undefined) {
       logger.warn({ treasuryId, symbol: holding.symbol }, "Ledger reconciliation skipped because a holding cannot be valued");
       return "Holding price unavailable; reconciliation idle";

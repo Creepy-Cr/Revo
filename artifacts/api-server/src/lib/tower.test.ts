@@ -96,7 +96,7 @@ describe("Tower registry cross-check", () => {
   });
 
   it("rejects unapproved tokens before reading the registry", async () => {
-    const support = await checkPairSupport("USDC", "WETH");
+    const support = await checkPairSupport("USDC", "NVDA");
     expect(support.supported).toBe(false);
     expect(support.reason).toMatch(/not an approved/i);
   });

@@ -45,6 +45,7 @@ import { getSecurityControls, treasuryTransitionLock } from "../lib/security-con
 import { llmGuard } from "../lib/llm-guard";
 import { getMarketQuote } from "../lib/market";
 import { buildRebalancePlan, normalizeRules } from "../lib/policy-engine";
+import { ARC_TOKENS, tradableRiskTokens } from "../lib/arc-tokens";
 import { buildSignals } from "../lib/signals";
 import { applyRebalance, computeDashboard, loadState, logActivity } from "../lib/state";
 import { getMode, MODE_LABEL, type OperatingMode } from "../lib/operating-mode";
@@ -80,6 +81,31 @@ async function setMode(treasuryId: string, mode: OperatingMode): Promise<void> {
         set: { mode, updatedAt: new Date() },
       });
   });
+}
+
+/**
+ * The asset set as the prompts state it, derived from the registry so a token
+ * added or withdrawn there changes what the models are told the same day.
+ */
+function assetSetSentence(): string {
+  const tokens = Object.values(ARC_TOKENS);
+  const traded = tokens.filter((t) => t.tradable).map((t) => `${t.symbol} (${t.issuer})`);
+  const heldOnly = tokens.filter((t) => !t.tradable).map((t) => t.symbol);
+  return `Its assets are ${traded.join(", ")}; USDC is the liquid reserve and the gas asset${
+    heldOnly.length > 0
+      ? `, and ${heldOnly.join(", ")} may be held and priced but is never traded`
+      : ""
+  }.`;
+}
+
+function policyCompilerSystemPrompt(): string {
+  const riskSymbols = tradableRiskTokens().map((t) => t.symbol);
+  return (
+    `You are the policy compiler for a DAO treasury holding real funds on Arc mainnet. ${assetSetSentence()} Its only execution venue is Uniswap v4. ` +
+    "Compile the user's instruction ONCE into structured, reviewable policy rules. Return JSON only (no prose, no code fences) with keys: name (short policy name), summary (one sentence of what the policy enforces), maxAllocationPct (number 5-35, max % in any single yield protocol), stablecoinReserveMinPct (number 25-80, minimum % held in stablecoins), drawdownLimitPct (number 5-30, max tolerated drawdown %), riskTolerance ('low'|'medium'|'high'), " +
+    `and optionally sleeveWeights (object of relative weights, keys limited to ${riskSymbols.join(", ")}) describing how the non-USDC sleeve is split; include sleeveWeights only when the instruction names or clearly implies particular assets, and omit it otherwise so the default (all of the sleeve in EURC) applies. The sleeve's total size comes from riskTolerance and drawdownLimitPct, never from the weights. ` +
+    "Respect the DAO mandate: never above 35% in a single protocol, never below 25% liquid USDC. It only proposes policy rules; deterministic policy checks and operator approvals gate execution. If the instruction asks for something outside those bounds, or names an asset the treasury does not trade, clamp or drop it and reflect that in the summary. Never claim a trade happened."
+  );
 }
 
 /**
@@ -331,8 +357,7 @@ router.post("/treasury/command", requireOperator(["strategist"]), commandGuard, 
       {
         model: POLICY_COMPILER_MODEL,
         max_tokens: 8192,
-        system:
-          "You are the policy compiler for a DAO treasury holding real funds on Arc mainnet. Its only assets are USDC and EURC, and its only execution venue is Uniswap v4. Compile the user's instruction ONCE into structured, reviewable policy rules. Return JSON only (no prose, no code fences) with keys: name (short policy name), summary (one sentence of what the policy enforces), maxAllocationPct (number 5-35, max % in any single yield protocol), stablecoinReserveMinPct (number 25-80, minimum % held in stablecoins), drawdownLimitPct (number 5-30, max tolerated drawdown %), riskTolerance ('low'|'medium'|'high'). Respect the DAO mandate: never above 35% in a single protocol, never below 25% liquid USDC. It only proposes policy rules; deterministic policy checks and operator approvals gate execution. If the instruction asks for something outside those bounds, clamp it and reflect the clamp in the summary. Never claim a trade happened.",
+        system: policyCompilerSystemPrompt(),
         messages: [{ role: "user", content: parsed.data.command }],
       },
       // Bound the upstream spend: one attempt, hard 60s cap.
@@ -352,6 +377,7 @@ router.post("/treasury/command", requireOperator(["strategist"]), commandGuard, 
       stablecoinReserveMinPct?: unknown;
       drawdownLimitPct?: unknown;
       riskTolerance?: unknown;
+      sleeveWeights?: unknown;
     };
 
     if (typeof compiled.name !== "string" || typeof compiled.summary !== "string") {
@@ -364,6 +390,7 @@ router.post("/treasury/command", requireOperator(["strategist"]), commandGuard, 
       stablecoinReserveMinPct: compiled.stablecoinReserveMinPct,
       drawdownLimitPct: compiled.drawdownLimitPct,
       riskTolerance: compiled.riskTolerance,
+      sleeveWeights: compiled.sleeveWeights,
     });
     if (!rules) {
       throw new Error("The policy compiler returned malformed rule values");
@@ -534,7 +561,7 @@ router.post("/treasury/agent/ask", requireOperator(["viewer", "strategist", "app
       {
         model: ARCUS_CHAT_MODEL,
         max_tokens: 8192,
-        system: `You are ${AGENT_NAME}, the treasury agent of Revo Treasury, a DAO treasury holding real funds on Arc mainnet. Its only assets are USDC and EURC, and its only execution venue is Uniswap v4. Deposits, withdrawals, and approved rebalances move real funds. You propose actions, while deterministic policy checks and required approvals gate execution.
+        system: `You are ${AGENT_NAME}, the treasury agent of Revo Treasury, a DAO treasury holding real funds on Arc mainnet. ${assetSetSentence()} Its only execution venue is Uniswap v4, and every trade has USDC on one side. Deposits, withdrawals, and approved rebalances move real funds. You propose actions, while deterministic policy checks and required approvals gate execution.
 
 You are answering an operator's question about your recent decisions. A JSON snapshot of the live treasury state follows. It is the ONLY source of truth:
 - Ground every claim in specific numbers, signals, proposals, policies, or activity entries from the snapshot. Signals carry per-source component scores (-100..+100 signed, with weights) that compose into the 0-100 composite. Use them to explain WHY a signal reads the way it does.
@@ -692,7 +719,11 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
     // with the state it will execute against.
     const dashboard = await computeDashboard(treasuryId);
     const plan = buildRebalancePlan(activated.rules, dashboard.allocations);
-    const autonomous = mode === "autonomous";
+    // Autonomous mode auto-approves only what sits inside the policy. A plan
+    // that sells a holding the policy never names is not inside it: that
+    // liquidation waits for an operator like any Managed-mode proposal.
+    const autonomous = mode === "autonomous" && (plan?.liquidations.length ?? 0) === 0;
+    const heldForLiquidation = mode === "autonomous" && !autonomous;
     let proposal: TreasuryProposal | null = null;
 
     if (plan) {
@@ -707,7 +738,9 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
           title: `Rebalance to "${activated.name}" targets`,
           summary: autonomous
             ? "Engine-generated rebalance, auto-approved under Autonomous mode because it stays inside the active policy. Settles as a real swap on Arc."
-            : "Engine-generated rebalance derived from the active policy. Waiting for operator approval.",
+            : heldForLiquidation
+              ? `Engine-generated rebalance that sells ${plan.liquidations.join(", ")} down to zero because the policy targets leave ${plan.liquidations.length === 1 ? "it" : "them"} nothing. Autonomous mode does not auto-approve a sale the policy does not name, so this waits for operator approval.`
+              : "Engine-generated rebalance derived from the active policy. Waiting for operator approval.",
           status: autonomous ? "approved" : "pending",
           createdAt: new Date(),
           action: plan.action,
@@ -726,7 +759,7 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
       }
     }
 
-    return { kind: "activated" as const, activated, plan, autonomous, proposal, cancelled };
+    return { kind: "activated" as const, activated, plan, autonomous, heldForLiquidation, proposal, cancelled };
     });
   } catch (error) {
     req.log.error({ err: error, policyId }, "Policy activation failed and was rolled back");
@@ -763,7 +796,7 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
     return;
   }
 
-  const { activated, plan, autonomous, proposal, cancelled } = result;
+  const { activated, plan, autonomous, heldForLiquidation, proposal, cancelled } = result;
   const proposalId = proposal?.id ?? null;
 
   await auditSafe({
@@ -774,7 +807,12 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
     treasuryId,
     resourceId: activated.id,
     result: "ok",
-    detail: { autonomous, proposalId, cancelledStale: cancelled.length },
+    detail: {
+      autonomous,
+      proposalId,
+      cancelledStale: cancelled.length,
+      ...(plan && plan.liquidations.length > 0 ? { liquidations: plan.liquidations, heldForOperator: heldForLiquidation } : {}),
+    },
   });
 
   for (const stale of cancelled) {
@@ -799,6 +837,14 @@ router.post("/treasury/policies/:policyId/approve", requireOperator(["approver"]
       treasuryId,
       "Auto-approved rebalance accepted for settlement",
       `Autonomous mode accepted the "${activated.name}" targets: ${plan.action}. Settling the swap on Arc now.`,
+      "processing",
+      "system",
+    );
+  } else if (heldForLiquidation) {
+    await logActivity(
+      treasuryId,
+      `Policy "${activated.name}" activated. Sale held for approval`,
+      `The policy targets leave ${plan.liquidations.join(", ")} nothing, so the engine's plan sells ${plan.liquidations.length === 1 ? "it" : "them"} down to zero. Autonomous mode does not approve that on its own; approve the proposal to settle it on Arc.`,
       "processing",
       "system",
     );

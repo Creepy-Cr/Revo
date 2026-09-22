@@ -16,6 +16,13 @@ export interface PolicyRules {
   drawdownLimitPct: number;
   /** Sizing of the directional sleeve. */
   riskTolerance: "low" | "medium" | "high";
+  /**
+   * How the directional sleeve is split across the treasury's risk assets,
+   * as relative weights by symbol. Absent on policies compiled before more
+   * than one risk asset existed; the engine then puts the whole sleeve in
+   * EURC, which is what those policies meant when they were written.
+   */
+  sleeveWeights?: Record<string, number>;
 }
 
 export const policiesTable = pgTable("policies", {

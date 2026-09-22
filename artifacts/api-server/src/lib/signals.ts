@@ -1,7 +1,7 @@
-import { ARC_TOKENS, type TradedSymbol } from "./arc-tokens";
-import { getMarketQuote } from "./market";
-import { fetchXSentiment } from "./x-sentiment";
-import { fetchNewsSentiment } from "./news-sentiment";
+import { ARC_TOKENS, priceIdOf, type TradedSymbol } from "./arc-tokens";
+import { getMarketQuote, referenceEntryFor } from "./market";
+import { fetchXSentiment, type XSentimentAsset } from "./x-sentiment";
+import { fetchNewsSentiment, type NewsAsset } from "./news-sentiment";
 import { fetchWhaleActivity } from "./whale-watch";
 import { fetchDiscordSentiment } from "./discord-sentiment";
 
@@ -107,9 +107,26 @@ const githubCache = new Map<string, RepoActivity>();
 /**
  * Scales a signed 24h percentage change onto the -100..+100 component range.
  * The factor sets where the component saturates, which has to differ per
- * asset. EURC's USD value tracks the euro, so even a modest daily move matters.
+ * asset: a 1.7% day is a large move for the euro or a yield token and an
+ * ordinary one for bitcoin.
  */
-const EURC_MOMENTUM_SCALE = 60; // saturates around a 1.7% day
+const MOMENTUM_SCALE: Record<string, number> = {
+  EURC: 60, // saturates around a 1.7% day
+  syrupUSDC: 100, // a yield token should only drift; a 1% day is news
+  cirBTC: 12, // saturates around an 8% day
+  WETH: 10, // saturates around a 10% day
+  wARS: 60, // an official fix moving 1.7% in a day is a devaluation step
+};
+const DEFAULT_MOMENTUM_SCALE = 30;
+
+/** What each token's 24h move actually measures, for the component copy. */
+const MOMENTUM_MEANING: Record<string, string> = {
+  EURC: "The sleeve's USD value moves with the euro, so this is currency exposure rather than crypto beta.",
+  syrupUSDC: "The token accrues Maple pool yield and should only drift upward; a sharp move either way means the pool, not the market, changed.",
+  cirBTC: "The token is redeemable one-for-one for bitcoin, so this is bitcoin exposure with Circle custody risk on top.",
+  WETH: "The token is ether wrapped by Arc's bridge, so this is ether exposure with bridge risk on top.",
+  wARS: "The rate is the official BCRA fix, so this measures peso devaluation as the central bank publishes it, not the parallel market.",
+};
 
 /**
  * Derived from the pinned registry rather than written out, so the copy on the
@@ -157,47 +174,46 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
   const now = new Date().toISOString();
   const signals: ComputedSignal[] = [];
 
-  const [
-    quote,
-    issuerRepoActivity,
-    eurcSentiment,
-    usdcSentiment,
-    eurcNews,
-    usdcNews,
-    whale,
-    discord,
-  ] = await Promise.all([
+  const riskTokens = Object.values(ARC_TOKENS).filter((t) => t.symbol !== "USDC");
+  const [quote, issuerRepoActivity, usdcSentiment, usdcNews, whale, discord, ...perToken] = await Promise.all([
     getMarketQuote(),
-    // Circle's FiatToken implementation is the issuer contract behind both the
-    // USDC reserve and the EURC sleeve on Arc, so its churn is real risk for
-    // both legs rather than a per-asset curiosity.
+    // Circle's FiatToken implementation is the issuer contract behind the
+    // USDC reserve and every Circle-issued sleeve on Arc, so its churn is
+    // real risk for each of those legs rather than a per-asset curiosity.
     fetchRepoActivity("circlefin", "stablecoin-evm"),
-    fetchXSentiment("EURC"),
     fetchXSentiment("USDC"),
-    fetchNewsSentiment("EURC"),
     fetchNewsSentiment("USDC"),
     fetchWhaleActivity(),
     fetchDiscordSentiment(),
+    ...riskTokens.map(async (token) => {
+      const [sentiment, news] = await Promise.all([
+        fetchXSentiment(token.symbol as XSentimentAsset),
+        fetchNewsSentiment(token.symbol as NewsAsset),
+      ]);
+      return { token, sentiment, news };
+    }),
   ]);
 
-  // ---- EURC composite: the directional sleeve ----
-  {
-    const token = ARC_TOKENS.EURC;
+  // ---- One composite per sleeve asset, tradable or merely held ----
+  for (const { token, sentiment, news } of perToken) {
     const components: SignalComponent[] = [];
-    const eurUsd = quote?.eurUsd;
-    const eurChange = quote?.eurChange24h;
+    const entry = referenceEntryFor(priceIdOf(token.price), quote);
+    const usd = entry?.usd;
+    const change = entry?.change24h;
+    const scale = MOMENTUM_SCALE[token.symbol] ?? DEFAULT_MOMENTUM_SCALE;
 
-    if (quote && typeof eurUsd === "number" && typeof eurChange === "number") {
+    if (entry && typeof usd === "number" && typeof change === "number") {
+      const isFx = token.price.kind === "fx";
       components.push({
-        source: "CoinGecko market data",
-        label: "24h momentum",
-        score: Math.round(clamp(eurChange * EURC_MOMENTUM_SCALE, -100, 100)),
+        source: isFx ? "Frankfurter official FX fixes" : "CoinGecko market data",
+        label: isFx ? "Day-on-day official rate" : "24h momentum",
+        score: Math.round(clamp(change * scale, -100, 100)),
         weight: 0.6,
-        detail: `${token.symbol} last traded at $${eurUsd.toFixed(4)}, ${eurChange >= 0 ? "up" : "down"} ${Math.abs(eurChange).toFixed(2)}% in 24h${quote.stale ? " (last successful fetch)" : ""}. The sleeve's USD value moves with the euro, so this is currency exposure rather than crypto beta.`,
+        detail: `${token.symbol} ${isFx ? "fixed" : "last traded"} at $${usd < 0.01 ? usd.toPrecision(4) : usd.toFixed(usd >= 100 ? 2 : 4)}, ${change >= 0 ? "up" : "down"} ${Math.abs(change).toFixed(2)}% ${isFx ? "since the previous fix" : "in 24h"}${entry.stale ? " (last successful fetch)" : ""}. ${MOMENTUM_MEANING[token.symbol] ?? ""}`.trim(),
       });
     }
 
-    if (issuerRepoActivity) {
+    if (issuerRepoActivity && token.issuer === "Circle") {
       components.push({
         source: "GitHub public API",
         label: "Issuer contract churn",
@@ -207,23 +223,23 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
       });
     }
 
-    if (eurcSentiment) {
+    if (sentiment) {
       components.push({
         source: "X (Twitter) public posts",
         label: "Social sentiment",
-        score: eurcSentiment.score,
+        score: sentiment.score,
         weight: 0.2,
-        detail: `${eurcSentiment.sampleSize} recent English posts on ${token.symbol}: ${eurcSentiment.bullish} bullish vs ${eurcSentiment.bearish} bearish (${eurcSentiment.neutral} neutral).`,
+        detail: `${sentiment.sampleSize} recent English posts on ${token.symbol}${token.symbol === "cirBTC" ? " (searched as bitcoin)" : token.symbol === "WETH" ? " (searched as ether)" : token.symbol === "wARS" ? " (searched as the Argentine peso)" : ""}: ${sentiment.bullish} bullish vs ${sentiment.bearish} bearish (${sentiment.neutral} neutral).`,
       });
     }
 
-    if (eurcNews) {
+    if (news) {
       components.push({
         source: "Crypto news RSS feeds",
         label: "News sentiment",
-        score: eurcNews.score,
+        score: news.score,
         weight: 0.2,
-        detail: `${eurcNews.sampleSize} live headline${eurcNews.sampleSize === 1 ? "" : "s"} mentioning ${token.symbol} from ${eurcNews.feeds.join(", ")}: ${eurcNews.bullish} bullish vs ${eurcNews.bearish} bearish (${eurcNews.neutral} neutral).`,
+        detail: `${news.sampleSize} live headline${news.sampleSize === 1 ? "" : "s"} mentioning ${token.symbol}${token.symbol === "cirBTC" ? " or bitcoin" : token.symbol === "WETH" ? " or ether" : token.symbol === "wARS" ? " or the Argentine peso" : ""} from ${news.feeds.join(", ")}: ${news.bullish} bullish vs ${news.bearish} bearish (${news.neutral} neutral).`,
       });
     }
 
@@ -231,7 +247,7 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
       const normalized = normalizeWeights(components);
       const score = compositeScore(normalized);
       signals.push({
-        id: "sig-eurc-composite",
+        id: `sig-${token.symbol.toLowerCase()}-composite`,
         asset: token.symbol,
         score,
         direction: score >= 58 ? "positive" : score <= 38 ? "warning" : "neutral",
@@ -244,7 +260,11 @@ export async function buildSignals(): Promise<ComputedSignal[]> {
         sources: normalized.map((c) => c.source),
         confidence: Math.round(clamp(55 + normalized.length * 12, 55, 90)),
         time: quote && quote.stale ? new Date(quote.fetchedAt).toISOString() : now,
-        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} on the ${token.name.toLowerCase()}, the one risk leg Revo will actually route a trade in. Each component score below is computed from actually fetched data.`,
+        detail: `Composite of ${normalized.length} live source${normalized.length > 1 ? "s" : ""} on the ${token.name.toLowerCase()}, ${
+          token.tradable
+            ? "one of the risk legs Revo routes trades in"
+            : "which Revo holds and values but does not trade"
+        }. Each component score below is computed from actually fetched data.`,
         components: normalized,
       });
     }

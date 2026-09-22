@@ -15,7 +15,7 @@
 
 import type { PublicClient } from "viem";
 import { arcPublicClient, ensureTreasuryWallet } from "./arc-chain";
-import { ARC_TOKENS, type ArcToken } from "./arc-tokens";
+import { ARC_TOKENS, priceIdOf, type ArcToken } from "./arc-tokens";
 import { fromBaseUnits } from "./tower";
 
 const erc20Abi = [
@@ -38,7 +38,8 @@ export function resetHoldingsClient(): void {}
 export interface Holding extends Pick<ArcToken, "symbol" | "name" | "decimals" | "role" | "tradable"> {
   address: string;
   untradableReason?: string;
-  coingeckoId: string;
+  /** Key of this token's independent reference price in the market quote. */
+  priceId: string;
   /** Human units held. */
   units: number;
   /** Base units held, exact. */
@@ -95,7 +96,7 @@ export async function readCustodyHoldings(
         role: token.role,
         tradable: token.tradable,
         ...(token.untradableReason ? { untradableReason: token.untradableReason } : {}),
-        coingeckoId: token.coingeckoId,
+        priceId: priceIdOf(token.price),
         units: Number(fromBaseUnits(raw, token.decimals)),
         raw: raw.toString(),
       } satisfies Holding;

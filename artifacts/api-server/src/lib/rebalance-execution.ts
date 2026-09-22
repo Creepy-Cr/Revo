@@ -60,9 +60,9 @@ import {
   type ConfirmedReceipt,
   type CustodyTransaction,
 } from "./arc-chain";
-import { ARC_TOKENS, type ArcToken } from "./arc-tokens";
+import { ARC_TOKENS, priceIdOf, tradableRiskTokens, type ArcToken } from "./arc-tokens";
 import { readCustodyHoldings, type Holding } from "./holdings";
-import { referencePriceFor, type MarketQuote } from "./market";
+import { referenceEntryFor, referencePriceFor, type MarketQuote } from "./market";
 import {
   PERMIT2,
   SWAP_DEADLINE_SECONDS,
@@ -78,6 +78,7 @@ import { logger } from "./logger";
 import {
   REBALANCE_SIGNED_AUDIT_ACTION,
   assertFreshMarketQuote,
+  isCurrentReference,
   assertIssuerAllows,
   assertRebalanceCaps,
 } from "./custody-policy";
@@ -189,7 +190,7 @@ export type SwapBroadcastClaim = (
 ) => Promise<boolean>;
 
 /** One direction of trade, already sized against real spendable balance. */
-interface SwapLeg {
+export interface SwapLeg {
   input: ArcToken;
   output: ArcToken;
   /** Human decimal string, exact at the input token's precision. */
@@ -199,7 +200,7 @@ interface SwapLeg {
   notionalUsd: number;
 }
 
-type PlanResult =
+export type PlanResult =
   | {
       kind: "swap";
       leg: SwapLeg;
@@ -214,19 +215,43 @@ type PlanResult =
   | { kind: "nothing-to-do"; reason: string }
   | { kind: "refused"; reason: string };
 
-/** Smallest trade the quoter can price meaningfully: 0.01 of a token. */
-function dustFloor(token: ArcToken): bigint {
-  return token.decimals >= 2 ? 10n ** BigInt(token.decimals - 2) : 1n;
+/**
+ * Smallest leg worth sending, in USD. Below this the gas and the pool fee
+ * are the trade. Measured in value rather than token units because 0.01 of
+ * a token is a cent of wARS and a thousand dollars of cirBTC.
+ */
+export const MIN_LEG_USD = 1;
+
+/**
+ * Plans the next leg toward a target without quoting, signing or sending
+ * anything. Settlement uses it after a leg confirms to learn whether the
+ * approved target is now reached or another leg is still owed, so the
+ * proposal's record says which - the alternative was calling a target
+ * "executed" after the first of several swaps.
+ */
+export async function planRebalanceLeg(
+  treasuryId: string,
+  targets: AllocationTarget[],
+  quote: MarketQuote | null,
+): Promise<PlanResult> {
+  return planSwap(treasuryId, targets, quote);
 }
 
 /**
  * Sizes the single swap that moves the treasury furthest toward its approved
  * target, using the balances the wallet holds right now.
  *
- * One swap rather than a full basket rotation on purpose: the only pair Revo
- * can route on Arc is USDC/EURC, so a target over those two symbols is always
- * reachable in one leg, and every extra leg is another way for a rebalance to
- * half-settle.
+ * One swap rather than a full basket rotation on purpose: every pool Revo
+ * pins on Arc has USDC on one side, so every leg it can route is either a
+ * sale of a risk asset into USDC or a purchase of one with USDC, and every
+ * extra leg is another way for a rebalance to half-settle. A target that
+ * moves value between two risk assets is reached over two approvals: the
+ * sale first, because reducing exposure never needs the reserve to fund it.
+ *
+ * Purchases are funded only from USDC the target says is surplus. The
+ * reserve floor is a share of the book, and a purchase that dipped below it
+ * to chase another asset's target would be a policy breach made by the
+ * engine that exists to prevent them.
  */
 async function planSwap(
   treasuryId: string,
@@ -241,22 +266,31 @@ async function planSwap(
     };
   }
 
-  // Every held asset must be priceable, including the ones no target names:
-  // percentages are shares of the whole book, so an unpriced holding makes
-  // the denominator wrong and would systematically oversize the trade.
+  // Every held asset must carry a CURRENT price, including the ones no
+  // target names: percentages are shares of the whole book, so a holding
+  // priced from a stale or missing feed makes the denominator wrong and would
+  // systematically mis-size the trade. Zero balances need no price.
   const priced = new Map<string, { holding: Holding; usd: number; price: number }>();
   for (const holding of custody.holdings) {
-    const price = referencePriceFor(holding.coingeckoId, quote);
-    if (price === undefined) {
-      if (holding.units > 0) {
-        return {
-          kind: "refused",
-          reason: `No independent market price for ${holding.symbol}, so the treasury's composition could not be valued and the rebalance was not sized.`,
-        };
-      }
-      continue;
+    const entry = referenceEntryFor(holding.priceId, quote);
+    const current = entry !== undefined && isCurrentReference(entry);
+    if (!current && holding.units > 0) {
+      return {
+        kind: "refused",
+        reason:
+          entry === undefined
+            ? `No independent market price for ${holding.symbol}, so the treasury's composition could not be valued and the rebalance was not sized.`
+            : `The independent market price for ${holding.symbol} is stale or more than 10 minutes old, so the treasury's composition could not be valued and the rebalance was not sized.`,
+      };
     }
-    priced.set(holding.symbol, { holding, usd: holding.units * price, price });
+    // A zero balance is worth nothing whatever its price says, and it stays
+    // in the plan so a purchase of it can still be sized; the leg's own
+    // freshness check then rules on that price before anything is quoted.
+    priced.set(holding.symbol, {
+      holding,
+      usd: current ? holding.units * entry.usd : 0,
+      price: entry?.usd ?? Number.NaN,
+    });
   }
 
   const totalUsd = [...priced.values()].reduce((sum, p) => sum + p.usd, 0);
@@ -268,38 +302,101 @@ async function planSwap(
     };
   }
 
-  // Positive delta = the target wants more of this asset than is held.
-  const deltas = targets
-    .map((target) => {
-      const entry = priced.get(target.symbol);
-      if (!entry) return null;
-      return {
-        symbol: target.symbol,
-        token: ARC_TOKENS[target.symbol]!,
-        entry,
-        deltaUsd: (totalUsd * target.percentage) / 100 - entry.usd,
-      };
-    })
-    .filter((d): d is NonNullable<typeof d> => d !== null && d.token.tradable);
-
-  const sell = deltas.reduce<(typeof deltas)[number] | null>(
-    (worst, d) => (d.deltaUsd < 0 && (!worst || d.deltaUsd < worst.deltaUsd) ? d : worst),
-    null,
-  );
-  const buy = deltas.reduce<(typeof deltas)[number] | null>(
-    (best, d) => (d.deltaUsd > 0 && (!best || d.deltaUsd > best.deltaUsd) ? d : best),
-    null,
-  );
-  if (!sell || !buy) {
+  const usdcEntry = priced.get("USDC");
+  if (!usdcEntry) {
     return {
-      kind: "nothing-to-do",
-      reason: "Live balances already sit on the approved target, so no swap was needed.",
+      kind: "refused",
+      reason: "USDC could not be priced, so no leg through the reserve could be sized.",
     };
   }
 
-  const notionalUsd = Math.min(-sell.deltaUsd, buy.deltaUsd);
+  // Held-only positions are fixed at whatever they are worth right now: Revo
+  // never trades them, so no target can move them. The approved percentages
+  // are applied to the rest of the book, scaled so they still add up to it.
+  // Whether or not the approval named the held-only asset, and however its
+  // price has drifted since, the tradable targets stay reachable.
+  const heldOnlyUsd = [...priced.values()]
+    .filter((p) => !p.holding.tradable)
+    .reduce((sum, p) => sum + p.usd, 0);
+  const tradableUsd = totalUsd - heldOnlyUsd;
+  if (!(tradableUsd > 0)) {
+    return {
+      kind: "nothing-to-do",
+      reason: `Everything the wallet holds is in positions Revo never trades (${[...priced.values()]
+        .filter((p) => !p.holding.tradable && p.usd > 0)
+        .map((p) => p.holding.symbol)
+        .join(", ")}), so there is nothing to rebalance.`,
+    };
+  }
+
+  // Percentages are shares of the tradable book: a tradable risk asset the
+  // targets do not name is implicitly targeted at zero, since the named
+  // targets already account for the whole and leave it nothing.
+  const targetPct = new Map<string, number>();
+  for (const t of targets) {
+    if (ARC_TOKENS[t.symbol]?.tradable) targetPct.set(t.symbol, t.percentage);
+  }
+  for (const token of tradableRiskTokens()) {
+    if (!targetPct.has(token.symbol)) targetPct.set(token.symbol, 0);
+  }
+  const targetTotalPct = [...targetPct.values()].reduce((sum, p) => sum + p, 0);
+  if (!(targetTotalPct > 0)) {
+    return {
+      kind: "refused",
+      reason: "The approved targets give the tradable book nothing to hold, so no leg could be sized.",
+    };
+  }
+
+  // Positive delta = the target wants more of this asset than is held.
+  const deltaOf = (symbol: string): number | null => {
+    const entry = priced.get(symbol);
+    const pct = targetPct.get(symbol);
+    if (!entry || pct === undefined) return null;
+    return (tradableUsd * pct) / targetTotalPct - entry.usd;
+  };
+  const usdcDelta = deltaOf("USDC") ?? 0;
+  const usdcSurplusUsd = Math.max(0, -usdcDelta);
+
+  type Leg = { sell: ArcToken; buy: ArcToken; notionalUsd: number };
+  const legs: Leg[] = [];
+  for (const token of tradableRiskTokens()) {
+    const delta = deltaOf(token.symbol);
+    if (delta === null) continue;
+    if (delta < 0) {
+      legs.push({ sell: token, buy: ARC_TOKENS.USDC!, notionalUsd: -delta });
+    } else if (delta > 0 && usdcSurplusUsd > 0) {
+      legs.push({ sell: ARC_TOKENS.USDC!, buy: token, notionalUsd: Math.min(delta, usdcSurplusUsd) });
+    }
+  }
+  const chosen = legs.reduce<Leg | null>(
+    (best, leg) => (!best || leg.notionalUsd > best.notionalUsd ? leg : best),
+    null,
+  );
+  if (!chosen) {
+    const heldOnlyNames = [...priced.values()]
+      .filter((p) => !p.holding.tradable && p.usd > 0)
+      .map((p) => p.holding.symbol);
+    return {
+      kind: "nothing-to-do",
+      reason:
+        heldOnlyNames.length > 0
+          ? `The tradable balances already sit on the approved target; ${heldOnlyNames.join(", ")} is held at its current share because Revo never trades it, so no swap was needed.`
+          : "Live balances already sit on the approved target, so no swap was needed.",
+    };
+  }
+
+  const sell = { symbol: chosen.sell.symbol, token: chosen.sell, entry: priced.get(chosen.sell.symbol)! };
+  const buy = { symbol: chosen.buy.symbol, token: chosen.buy, entry: priced.get(chosen.buy.symbol)! };
+  if (!Number.isFinite(sell.entry.price) || sell.entry.price <= 0) {
+    // Unreachable while a sale needs a positive, currently priced balance,
+    // and kept so a future change to that rule cannot divide by nothing.
+    return {
+      kind: "refused",
+      reason: `No current independent market price for ${sell.symbol}, so the sale could not be sized.`,
+    };
+  }
   const wanted = toBaseUnits(
-    (notionalUsd / sell.entry.price).toFixed(sell.token.decimals),
+    (chosen.notionalUsd / sell.entry.price).toFixed(sell.token.decimals),
     sell.token.decimals,
   );
   if (wanted === null || wanted <= 0n) {
@@ -335,10 +432,12 @@ async function planSwap(
   }
 
   const amountBaseUnits = wanted < spendable ? wanted : spendable;
-  if (amountBaseUnits < dustFloor(sell.token)) {
+  const amount = fromBaseUnits(amountBaseUnits, sell.token.decimals);
+  const notionalUsd = Number(amount) * sell.entry.price;
+  if (amountBaseUnits <= 0n || notionalUsd < MIN_LEG_USD) {
     return {
       kind: "nothing-to-do",
-      reason: `The remaining drift is under 0.01 ${sell.symbol}, below the smallest amount the venue can price, so no swap was sent.`,
+      reason: `The remaining drift is under $${MIN_LEG_USD} of ${sell.symbol}, too small to be worth a swap, so none was sent.`,
     };
   }
 
@@ -347,9 +446,9 @@ async function planSwap(
     leg: {
       input: sell.token,
       output: buy.token,
-      amount: fromBaseUnits(amountBaseUnits, sell.token.decimals),
+      amount,
       amountBaseUnits,
-      notionalUsd: Number(fromBaseUnits(amountBaseUnits, sell.token.decimals)) * sell.entry.price,
+      notionalUsd,
     },
     outputHeldBefore: BigInt(buy.entry.holding.raw),
   };
@@ -491,7 +590,7 @@ export async function readSettledOutcome(
     const held = custody.holdings.filter((h) => h.units > 0);
     const priced = held.map((h) => ({
       holding: h,
-      price: referencePriceFor(h.coingeckoId, marketQuote),
+      price: referencePriceFor(h.priceId, marketQuote),
     }));
     const unpriced = priced.filter((p) => p.price === undefined);
     const totalUsd = priced.reduce((sum, p) => sum + p.holding.units * (p.price ?? 0), 0);
@@ -622,7 +721,9 @@ export async function settleRebalance(
   claimBroadcast?: SwapBroadcastClaim,
 ): Promise<RebalanceOutcome> {
   try {
-    assertFreshMarketQuote(marketQuote);
+    // The anchor price must be current before anything is sized; the two
+    // prices the chosen leg depends on are checked once the leg is known.
+    assertFreshMarketQuote(marketQuote, [priceIdOf(ARC_TOKENS.USDC!.price)]);
   } catch (error) {
     logger.error({ err: error, treasuryId }, "Rebalance refused by market price policy");
     await auditSafe({
@@ -646,8 +747,16 @@ export async function settleRebalance(
   // The same guards the operator-facing quote endpoint applies. A route that
   // is too shallow, too far from the real market, or too deep a bite of the
   // pool never reaches a signer.
-  const referenceIn = referencePriceFor(leg.input.coingeckoId, marketQuote);
-  const referenceOut = referencePriceFor(leg.output.coingeckoId, marketQuote);
+  // The leg is known now, so the freshness rule is applied to the two prices
+  // this trade actually depends on rather than to the whole feed.
+  const legPriceIds = [priceIdOf(leg.input.price), priceIdOf(leg.output.price)];
+  try {
+    assertFreshMarketQuote(marketQuote, legPriceIds);
+  } catch (error) {
+    return classify(error, "checking the independent market price");
+  }
+  const referenceIn = referencePriceFor(priceIdOf(leg.input.price), marketQuote);
+  const referenceOut = referencePriceFor(priceIdOf(leg.output.price), marketQuote);
   let quote: SwapQuote;
   try {
     quote = await getSwapQuote({
@@ -714,7 +823,7 @@ export async function settleRebalance(
     // the swap must not interleave with any other custody send for this
     // treasury.
     await withCustodyLock(treasuryId, async (custodyTx) => {
-      const tradePrice = referencePriceFor(leg.input.coingeckoId, marketQuote);
+      const tradePrice = referencePriceFor(priceIdOf(leg.input.price), marketQuote);
       if (tradePrice === undefined) {
         throw new ChainError(
           "REFUSED_BY_POLICY",
@@ -775,7 +884,7 @@ export async function settleRebalance(
       // The approvals above waited for confirmations. The independent price
       // that justified this trade is checked again at the moment of signing,
       // not only when settlement began.
-      assertFreshMarketQuote(marketQuote);
+      assertFreshMarketQuote(marketQuote, legPriceIds);
 
       const signedSwap = await signCustodyCall(wallet, UNIVERSAL_ROUTER, swapData, custodyTx);
       if (claimBroadcast && !(await claimBroadcast(signedSwap.hash, custodyTx))) {

@@ -29,7 +29,7 @@ const FEED_TIMEOUT_MS = 8_000;
  * Assets the news pipeline buckets headlines for. These mirror the pinned Arc
  * token registry.
  */
-export type NewsAsset = "EURC" | "USDC";
+export type NewsAsset = "EURC" | "USDC" | "syrupUSDC" | "cirBTC" | "WETH" | "wARS";
 
 export interface NewsSentiment extends LexiconScore {
   asset: NewsAsset;
@@ -46,6 +46,10 @@ export interface NewsSentiment extends LexiconScore {
 const PATTERNS: Record<NewsAsset, RegExp> = {
   EURC: /\beurc\b|euro coin|euro stablecoin|euro-backed/i,
   USDC: /\busdc\b|usd coin|stablecoin|\bcircle\b/i,
+  syrupUSDC: /syrupusdc|\bsyrup\b|maple finance/i,
+  cirBTC: /\bbitcoin\b|\bbtc\b|\bcirbtc\b/i,
+  WETH: /\bethereum\b|\bether\b|\beth\b|\bweth\b/i,
+  wARS: /argentin|\bpeso\b|\bbcra\b|\bwars\b/i,
 };
 
 const NEWS_ASSETS = Object.keys(PATTERNS) as NewsAsset[];

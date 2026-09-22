@@ -16,6 +16,10 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
   agentActivitiesTable,
+  policiesTable,
+  securityControlsTable,
+  treasurySettingsTable,
+  treasuryStateTable,
   alertsTable,
   auditEventsTable,
   db,
@@ -26,6 +30,7 @@ import {
 process.env.CUSTODY_MASTER_SECRET ??= "test-only-custody-master-secret";
 
 const settleRebalance = vi.fn();
+const planRebalanceLeg = vi.fn();
 const readSettledOutcome = vi.fn();
 const readFillFromReceipt = vi.fn();
 const getTransferRecoveryStatus = vi.fn();
@@ -34,7 +39,7 @@ const getTransferRecoveryStatus = vi.fn();
 // these tests are checking, not something worth restating in a stub.
 vi.mock("./rebalance-execution", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./rebalance-execution")>();
-  return { ...actual, settleRebalance, readSettledOutcome, readFillFromReceipt };
+  return { ...actual, planRebalanceLeg, settleRebalance, readSettledOutcome, readFillFromReceipt };
 });
 
 vi.mock("./arc-chain", async (importOriginal) => {
@@ -123,7 +128,9 @@ async function alerts() {
 }
 
 beforeEach(async () => {
-  vi.clearAllMocks();
+  // Reset, not clear: a queued one-shot value left behind by a failing test
+  // must not become the next test's planner answer.
+  vi.resetAllMocks();
   // Nothing readable unless a test says otherwise: the default must be the
   // degraded read, so no test passes by accident on invented balances.
   readSettledOutcome.mockResolvedValue({
@@ -132,6 +139,8 @@ beforeEach(async () => {
     holdingsAfter: [],
   });
   readFillFromReceipt.mockResolvedValue(null);
+  // A single-leg target by default: the leg that settled was the whole job.
+  planRebalanceLeg.mockResolvedValue({ kind: "nothing-to-do", reason: "on target" });
   treasuryId = `test-rebalance-${randomUUID()}`;
   treasuryIds.push(treasuryId);
   await db.insert(treasuriesTable).values({
@@ -147,6 +156,10 @@ afterAll(async () => {
     await db.delete(agentActivitiesTable).where(eq(agentActivitiesTable.treasuryId, id));
     await db.delete(auditEventsTable).where(eq(auditEventsTable.treasuryId, id));
     await db.delete(treasuryProposalsTable).where(eq(treasuryProposalsTable.treasuryId, id));
+    await db.delete(policiesTable).where(eq(policiesTable.treasuryId, id));
+    await db.delete(securityControlsTable).where(eq(securityControlsTable.id, id));
+    await db.delete(treasuryStateTable).where(eq(treasuryStateTable.id, id));
+    await db.delete(treasurySettingsTable).where(eq(treasurySettingsTable.id, id));
     await db.delete(treasuriesTable).where(eq(treasuriesTable.id, id));
   }
 });
@@ -441,5 +454,284 @@ describe("reconciling proposals stranded at approved", () => {
     expect(raised).toHaveLength(1);
     expect(raised[0]).toMatchObject({ severity: "critical", kind: "rebalance.manual-review" });
     expect(raised[0]!.data).toMatchObject({ proposalId: id });
+  });
+});
+
+const { ARC_TOKENS } = await import("./arc-tokens");
+
+describe("carrying a target that needs more than one leg", () => {
+  const ROTATION = [
+    { symbol: "USDC", percentage: 60 },
+    { symbol: "EURC", percentage: 10 },
+    { symbol: "WETH", percentage: 30 },
+  ];
+  const buyWeth = {
+    kind: "swap",
+    leg: { input: ARC_TOKENS.USDC, output: ARC_TOKENS.WETH, amount: "232", amountBaseUnits: 232_000_000n, notionalUsd: 232 },
+    outputHeldBefore: 0n,
+  };
+  const soldEurc = () =>
+    settled({ inputSymbol: "EURC", outputSymbol: "USDC", amountIn: "200", expectedOutput: "232", minOutput: "231.3" });
+
+  async function proposals() {
+    return db.select().from(treasuryProposalsTable).where(eq(treasuryProposalsTable.treasuryId, treasuryId));
+  }
+  async function setMode(mode: string) {
+    await db.insert(treasurySettingsTable).values({ id: treasuryId, mode });
+  }
+  async function activePolicy(): Promise<string> {
+    const id = `policy-${randomUUID()}`;
+    await db.insert(policiesTable).values({
+      id,
+      treasuryId,
+      name: "Balanced",
+      summary: "test",
+      sourceCommand: "test",
+      rules: {} as never,
+      status: "active",
+    });
+    return id;
+  }
+
+  it("says the target is not yet reached after a sale, and drafts the purchase for approval", async () => {
+    // Sell EURC first, then buy WETH with the USDC it freed: two swaps, two
+    // proposals. The first must not read as the whole rotation done.
+    const policyId = await activePolicy();
+    const first = await seedProposal({ targetAllocations: ROTATION, action: "60/10/30", policyId });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+
+    expect(await proposal(first)).toMatchObject({ status: "executed", executionTxHash: TX_HASH });
+    const [logged] = await activities();
+    expect(logged!.detail).toContain(
+      "This leg alone does not reach the approved target: about $232.00 of USDC still needs to move into WETH.",
+    );
+    expect(logged!.detail).toContain("waits for operator approval");
+    const followUp = (await proposals()).find((p) => p.id !== first);
+    expect(followUp).toMatchObject({
+      status: "pending",
+      policyId,
+      targetAllocations: ROTATION,
+      action: "60/10/30",
+      title: 'Rebalance to "Balanced" targets (next leg)',
+      executionTxHash: null,
+    });
+    expect(followUp!.summary).toContain("about $232.00 of USDC still needs to move into WETH");
+
+    // The operator approves the second leg; once it settles the target is met
+    // and the chain stops there.
+    await db.update(treasuryProposalsTable).set({ status: "approved", decidedAt: new Date() }).where(eq(treasuryProposalsTable.id, followUp!.id));
+    settleRebalance.mockResolvedValue(settled({ inputSymbol: "USDC", outputSymbol: "WETH", amountIn: "232", expectedOutput: "0.058", minOutput: "0.0578" }));
+    planRebalanceLeg.mockResolvedValue({ kind: "nothing-to-do", reason: "on target" });
+    await settleApprovedProposal(treasuryId, await proposal(followUp!.id), null);
+
+    expect(await proposal(followUp!.id)).toMatchObject({ status: "executed" });
+    expect((await activities()).at(-1)!.detail).toContain("The approved target is now reached, so no further leg is needed.");
+    expect(await proposals()).toHaveLength(2);
+    expect(settleRebalance).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not draft anything when the leg reached the target", async () => {
+    const id = await seedProposal();
+    settleRebalance.mockResolvedValue(settled());
+    await settleApprovedProposal(treasuryId, await proposal(id), null);
+    expect(await proposals()).toHaveLength(1);
+    expect((await activities())[0]!.detail).toContain("The approved target is now reached");
+  });
+
+  it("auto-approves and settles the next leg in Autonomous mode, under the same gates", async () => {
+    await setMode("autonomous");
+    // Auto-approval runs the same target validation a human approval does,
+    // which reads the treasury's state row.
+    await db.insert(treasuryStateTable).values({ id: treasuryId, usdcUnits: 0, lastUsdcPrice: 1 });
+    const first = await seedProposal({ targetAllocations: ROTATION, executionTxHash: null });
+    settleRebalance.mockResolvedValueOnce(soldEurc()).mockResolvedValueOnce(
+      settled({ inputSymbol: "USDC", outputSymbol: "WETH", amountIn: "232", expectedOutput: "0.058", minOutput: "0.0578" }),
+    );
+    planRebalanceLeg
+      .mockResolvedValueOnce(buyWeth)
+      .mockResolvedValueOnce({ kind: "nothing-to-do", reason: "on target" });
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+    await drainProposalSettlements();
+
+    const all = await proposals();
+    expect(all).toHaveLength(2);
+    const followUp = all.find((p) => p.id !== first)!;
+    expect(followUp).toMatchObject({ status: "executed", executionTxHash: TX_HASH });
+    expect(followUp.summary).toContain("Auto-approved under Autonomous mode");
+    expect(settleRebalance).toHaveBeenCalledTimes(2);
+    const logs = await activities();
+    expect(logs[0]!.detail).toContain("auto-approved under Autonomous mode; it is settling now");
+    expect(logs.at(-1)!.detail).toContain("The approved target is now reached");
+  });
+
+  it("holds a follow-up that would sell a holding to zero, even in Autonomous mode", async () => {
+    await setMode("autonomous");
+    const targets = [
+      { symbol: "USDC", percentage: 70 },
+      { symbol: "WETH", percentage: 30 },
+    ];
+    const first = await seedProposal({ targetAllocations: targets });
+    settleRebalance.mockResolvedValue(settled({ inputSymbol: "USDC", outputSymbol: "WETH" }));
+    planRebalanceLeg.mockResolvedValue({
+      kind: "swap",
+      leg: { input: ARC_TOKENS.cirBTC, output: ARC_TOKENS.USDC, amount: "0.001", amountBaseUnits: 100_000n, notionalUsd: 100 },
+      outputHeldBefore: 0n,
+    });
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+    await drainProposalSettlements();
+
+    const followUp = (await proposals()).find((p) => p.id !== first)!;
+    expect(followUp.status).toBe("pending");
+    expect(followUp.summary).toContain("sells cirBTC down to zero");
+    expect(settleRebalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds the follow-up for an operator when the emergency pause is on", async () => {
+    await setMode("autonomous");
+    const { getSecurityControls } = await import("./security-controls");
+    await getSecurityControls(treasuryId);
+    await db.update(securityControlsTable).set({ pauseActive: true }).where(eq(securityControlsTable.id, treasuryId));
+    const first = await seedProposal({ targetAllocations: ROTATION });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+    await drainProposalSettlements();
+
+    const followUp = (await proposals()).find((p) => p.id !== first)!;
+    expect(followUp.status).toBe("pending");
+    expect(followUp.summary).toContain("the emergency pause is active");
+    expect(settleRebalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops chaining unattended once the hourly leg limit is reached", async () => {
+    await setMode("autonomous");
+    for (let i = 0; i < 12; i += 1) {
+      await seedProposal({ status: "executed", executionTxHash: `0x${String(i).padStart(64, "0")}`, decidedAt: new Date() });
+    }
+    const first = await seedProposal({ targetAllocations: ROTATION });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+    await drainProposalSettlements();
+
+    const followUp = (await proposals()).find((p) => p.status === "pending")!;
+    expect(followUp).toBeDefined();
+    expect(followUp.summary).toContain("limit for unattended continuation");
+    expect(settleRebalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("drafts a held follow-up rather than dropping the chain when the re-plan fails", async () => {
+    await setMode("autonomous");
+    const first = await seedProposal({ targetAllocations: ROTATION });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue({ kind: "refused", reason: "Arc could not be read." });
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+    await drainProposalSettlements();
+
+    const [logged] = await activities();
+    expect(logged!.detail).toContain("could not be confirmed: Arc could not be read.");
+    const followUp = (await proposals()).find((p) => p.id !== first)!;
+    expect(followUp.status).toBe("pending");
+    expect(followUp.summary).toContain("could not confirm whether the target is reached");
+    expect(settleRebalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("drafts nothing when a rebalance for the same policy is already open", async () => {
+    const policyId = await activePolicy();
+    await seedProposal({ status: "pending", policyId, decidedAt: null });
+    const first = await seedProposal({ targetAllocations: ROTATION, policyId });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+
+    expect(await proposals()).toHaveLength(2);
+    expect((await activities())[0]!.detail).toContain("already waiting or settling, so no second one was drafted");
+  });
+
+  it("drafts nothing for a policy that was superseded meanwhile", async () => {
+    const policyId = await activePolicy();
+    await db.update(policiesTable).set({ status: "superseded" }).where(eq(policiesTable.id, policyId));
+    const first = await seedProposal({ targetAllocations: ROTATION, policyId });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+
+    expect(await proposals()).toHaveLength(1);
+    expect((await activities())[0]!.detail).toContain("no longer active, so no follow-up was drafted");
+  });
+
+  it("writes where the target stands onto the card itself", async () => {
+    const first = await seedProposal({ targetAllocations: ROTATION });
+    settleRebalance.mockResolvedValue(soldEurc());
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    await settleApprovedProposal(treasuryId, await proposal(first), null);
+
+    const done = await proposal(first);
+    expect(done.status).toBe("executed");
+    expect(done.summary).toContain("This leg alone does not reach the approved target: about $232.00 of USDC still needs to move into WETH.");
+    expect(done.summary).toContain("waits for operator approval");
+  });
+
+  it("finishes a leg the process died on after the swap confirmed, drafting exactly one next leg", async () => {
+    // The crash window: the swap confirmed and the row reached "settled",
+    // then nothing else happened. Reconciliation must finish it, once.
+    const id = await seedProposal({
+      status: "settled",
+      targetAllocations: ROTATION,
+      executionTxHash: TX_HASH,
+      decidedAt: new Date(Date.now() - 10 * 60_000),
+    });
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    expect(await reconcileApprovedProposals(treasuryId)).toBe(1);
+    expect(await reconcileApprovedProposals(treasuryId)).toBe(0);
+
+    expect(await proposal(id)).toMatchObject({ status: "executed", executionTxHash: TX_HASH });
+    const children = (await proposals()).filter((p) => p.id !== id);
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({ status: "pending", targetAllocations: ROTATION });
+    const logs = await activities();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.detail).toContain("the process ended before the approved target was re-planned, so reconciliation finished it.");
+    expect(logs[0]!.detail).toContain("about $232.00 of USDC still needs to move into WETH");
+    expect(settleRebalance).not.toHaveBeenCalled();
+  });
+
+  it("leaves a freshly settled leg to the settlement that is still finishing it", async () => {
+    const id = await seedProposal({ status: "settled", targetAllocations: ROTATION, executionTxHash: TX_HASH, decidedAt: new Date() });
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    expect(await reconcileApprovedProposals(treasuryId)).toBe(0);
+
+    expect(await proposal(id)).toMatchObject({ status: "settled" });
+    expect(await proposals()).toHaveLength(1);
+    expect(planRebalanceLeg).not.toHaveBeenCalled();
+  });
+
+  it("continues the target when the reconciler recovers a leg", async () => {
+    const id = await seedProposal({
+      targetAllocations: ROTATION,
+      executionTxHash: TX_HASH,
+      decidedAt: new Date(Date.now() - 10 * 60_000),
+    });
+    getTransferRecoveryStatus.mockResolvedValue("success");
+    planRebalanceLeg.mockResolvedValue(buyWeth);
+
+    expect(await reconcileApprovedProposals(treasuryId)).toBe(1);
+
+    const followUp = (await proposals()).find((p) => p.id !== id)!;
+    expect(followUp).toMatchObject({ status: "pending", targetAllocations: ROTATION });
+    expect((await activities())[0]!.detail).toContain("about $232.00 of USDC still needs to move into WETH");
   });
 });

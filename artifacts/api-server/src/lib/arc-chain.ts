@@ -21,8 +21,8 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { DEFAULT_ARC_RPC_URLS, arcRpcEndpoints, arcTransport } from "./arc-rpc";
 import { openCustodyKey, sealCustodyKey } from "./custody-crypto";
 import { logger } from "./logger";
-import { ARC_TOKENS } from "./arc-tokens";
-import { PERMIT2, UNIVERSAL_ROUTER } from "./uniswap-v4";
+import { tokenByAddress } from "./arc-tokens";
+import { PERMIT2, UNIVERSAL_ROUTER, SwapCalldataError, decodePinnedSwap } from "./v4-calldata";
 
 export type CustodyTransaction = NodePgDatabase<typeof dbSchema>;
 type CustodyExecutor = typeof db | CustodyTransaction;
@@ -369,33 +369,53 @@ const LEGAL_SELECTORS = {
   routerExecute: "0x3593564c",
 } as const;
 
-/** Pure signer firewall. It must run before custody key material is opened. */
+/**
+ * Pure signer firewall. It must run before custody key material is opened.
+ *
+ * Pinned tokens may be transferred, so a token Revo holds but refuses to
+ * trade is never a stranded position. Approvals exist only to feed the
+ * router, so they are limited to tradable tokens and to the fixed
+ * Permit2 -> UniversalRouter path. Router calldata is decoded and every
+ * rule of the one swap shape Revo signs is checked from the bytes; the
+ * caller's description of the payload is never consulted.
+ */
 export function assertCustodyCallAllowed(to: Address, data: Hex, value: bigint = 0n): void {
   const target = to.toLowerCase();
   const selector = data.slice(0, 10).toLowerCase();
-  const usdc = ARC_TOKENS.USDC.address.toLowerCase();
-  const eurc = ARC_TOKENS.EURC.address.toLowerCase();
-  const isToken = target === usdc || target === eurc;
-  let allowed =
-    (isToken && selector === LEGAL_SELECTORS.transfer) ||
-    (isToken && selector === LEGAL_SELECTORS.approve) ||
-    (target === PERMIT2.toLowerCase() && selector === LEGAL_SELECTORS.permit2Approve) ||
-    (target === UNIVERSAL_ROUTER.toLowerCase() && selector === LEGAL_SELECTORS.routerExecute);
-  if (value !== 0n) allowed = false;
+  const token = tokenByAddress(target);
+  let allowed = false;
+  let reason = "The custody signer refused a contract call outside its fixed allowlist.";
 
-  if (allowed && selector === LEGAL_SELECTORS.approve) {
+  if (value !== 0n) {
+    reason = "The custody signer never attaches value to a call.";
+  } else if (token && selector === LEGAL_SELECTORS.transfer) {
+    allowed = true;
+  } else if (token && selector === LEGAL_SELECTORS.approve) {
     const spender = `0x${data.slice(34, 74)}`.toLowerCase();
-    allowed = spender === PERMIT2.toLowerCase();
-  } else if (allowed && selector === LEGAL_SELECTORS.permit2Approve) {
+    allowed = token.tradable && spender === PERMIT2.toLowerCase();
+    if (!token.tradable) reason = `${token.symbol} is held but never traded, so it is never approved for spending.`;
+  } else if (target === PERMIT2.toLowerCase() && selector === LEGAL_SELECTORS.permit2Approve) {
+    const approvedToken = tokenByAddress(`0x${data.slice(34, 74)}`);
     const spender = `0x${data.slice(98, 138)}`.toLowerCase();
-    allowed = spender === UNIVERSAL_ROUTER.toLowerCase();
+    allowed = approvedToken !== undefined && approvedToken.tradable && spender === UNIVERSAL_ROUTER.toLowerCase();
+    if (approvedToken && !approvedToken.tradable) {
+      reason = `${approvedToken.symbol} is held but never traded, so it is never approved for spending.`;
+    }
+  } else if (target === UNIVERSAL_ROUTER.toLowerCase() && selector === LEGAL_SELECTORS.routerExecute) {
+    try {
+      decodePinnedSwap(data);
+      allowed = true;
+    } catch (error) {
+      reason =
+        error instanceof SwapCalldataError
+          ? `The custody signer refused router calldata: ${error.message}.`
+          : "The custody signer refused router calldata it could not decode.";
+    }
   }
+
   if (!allowed) {
-    logger.error({ to, selector, value: value.toString() }, "Custody call refused by signer allowlist");
-    throw new ChainError(
-      "REFUSED_BY_POLICY",
-      "The custody signer refused a contract call outside its fixed allowlist.",
-    );
+    logger.error({ to, selector, value: value.toString(), reason }, "Custody call refused by signer allowlist");
+    throw new ChainError("REFUSED_BY_POLICY", reason);
   }
 }
 
@@ -651,20 +671,17 @@ export async function signCustodyCall(
   await assertSignerAllowlist(wallet, to, data, 0n);
   const target = to.toLowerCase();
   let policyTokens: Address[];
-  if (
-    target === ARC_TOKENS.USDC.address.toLowerCase() ||
-    target === ARC_TOKENS.EURC.address.toLowerCase()
-  ) {
+  if (tokenByAddress(target)) {
     policyTokens = [to];
   } else if (target === PERMIT2.toLowerCase()) {
     policyTokens = [`0x${data.slice(34, 74)}` as Address];
   } else {
-    // Router calldata can spend one Circle token and receive the other. Both
-    // issuers' controls must permit the operation at the instant of signing.
-    policyTokens = [
-      ARC_TOKENS.USDC.address as Address,
-      ARC_TOKENS.EURC.address as Address,
-    ];
+    // Router calldata spends one pinned token and receives another. The
+    // allowlist above already proved the payload decodes as one pinned swap,
+    // so the legs are read from the bytes and both issuers' controls are
+    // checked at the instant of signing.
+    const swap = decodePinnedSwap(data);
+    policyTokens = [swap.input.address, swap.output.address];
   }
   for (const token of policyTokens) {
     await assertSendPolicy(wallet, token, executor);

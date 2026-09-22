@@ -39,7 +39,9 @@ export function Proposals() {
   const settlingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!proposals) return;
-    const settling = new Set(proposals.filter(p => p.status === 'approved').map(p => p.id));
+    // "settled" is the swap confirmed but the target not yet re-planned; it
+    // is still in flight from the operator's point of view.
+    const settling = new Set(proposals.filter(p => p.status === 'approved' || p.status === 'settled').map(p => p.id));
     for (const id of settlingRef.current) {
       if (settling.has(id)) continue;
       const resolved = proposals.find(p => p.id === id);
@@ -135,6 +137,9 @@ export function Proposals() {
             // "approved" is a decision, not a settlement. It gets its own
             // colour so it can never be read as a completed trade.
             const isApproved = p.status === 'approved';
+            // The swap confirmed, and the engine is checking whether the
+            // target is reached or another leg is owed. Not "executed" yet.
+            const isSettled = p.status === 'settled';
 
             // Keyed by the real Arc tokens the treasury can hold. Matches the
             // tones the allocations panel uses so one asset reads the same
@@ -142,6 +147,10 @@ export function Proposals() {
             const assetColors: Record<string, string> = {
               'USDC': 'bg-primary',
               'EURC': 'bg-purple-500',
+              'syrupUSDC': 'bg-emerald-500',
+              'cirBTC': 'bg-amber-500',
+              'WETH': 'bg-sky-500',
+              'wARS': 'bg-rose-500',
             };
             const defaultAssetColor = 'bg-white/40';
 
@@ -149,10 +158,10 @@ export function Proposals() {
               <div key={p.id} className="relative flex flex-col group border-b border-white/[0.08] pb-6 last:border-b-0 last:pb-0">
                 <div className="flex justify-between items-start mb-2">
                   <div className="font-display text-xl text-white pr-4 leading-snug tracking-tight">{p.title}</div>
-                  <div className={`shrink-0 flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-[0.1em] uppercase mt-1 ${isExec ? 'text-green-400' : isPend ? 'text-yellow-400' : isRej ? 'text-red-400' : isApproved ? 'text-cyan-400' : 'text-muted-foreground'}`}>
-                    {(isPend || isApproved) && <div className={`w-1.5 h-1.5 rounded-full ${isApproved ? 'bg-cyan-400' : 'bg-yellow-400'} animate-ping opacity-75 absolute -ml-3`} />}
-                    <div className={`w-1.5 h-1.5 rounded-sm ${isExec ? 'bg-green-400' : isPend ? 'bg-yellow-400' : isRej ? 'bg-red-400' : isApproved ? 'bg-cyan-400' : 'bg-white/40'}`} />
-                    {p.status}
+                  <div className={`shrink-0 flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-[0.1em] uppercase mt-1 ${isExec ? 'text-green-400' : isPend ? 'text-yellow-400' : isRej ? 'text-red-400' : (isApproved || isSettled) ? 'text-cyan-400' : 'text-muted-foreground'}`}>
+                    {(isPend || isApproved || isSettled) && <div className={`w-1.5 h-1.5 rounded-full ${(isApproved || isSettled) ? 'bg-cyan-400' : 'bg-yellow-400'} animate-ping opacity-75 absolute -ml-3`} />}
+                    <div className={`w-1.5 h-1.5 rounded-sm ${isExec ? 'bg-green-400' : isPend ? 'bg-yellow-400' : isRej ? 'bg-red-400' : (isApproved || isSettled) ? 'bg-cyan-400' : 'bg-white/40'}`} />
+                    {isSettled ? 'leg settled' : p.status}
                   </div>
                 </div>
                 <div className="text-sm text-muted-foreground mb-6 leading-relaxed">{p.summary}</div>
@@ -163,6 +172,15 @@ export function Proposals() {
                     <span>
                       Settling on Arc. The swap has not confirmed, so holdings have not moved yet.
                       This updates itself when it resolves.
+                    </span>
+                  </div>
+                )}
+                {isSettled && (
+                  <div className="mb-6 flex items-start gap-2 border-l-2 border-cyan-400/40 bg-cyan-400/[0.04] px-3 py-2 text-[11px] leading-relaxed text-white/50">
+                    <Loader2 className="mt-[2px] h-3 w-3 shrink-0 animate-spin text-cyan-400/70" />
+                    <span>
+                      The swap confirmed on Arc. Checking live balances to see whether the target is reached
+                      or another leg is owed; a next leg is drafted as its own proposal.
                     </span>
                   </div>
                 )}
@@ -189,7 +207,7 @@ export function Proposals() {
                   </div>
                 )}
 
-                {(isExec || isApproved) && p.explorerTxUrl && (
+                {(isExec || isApproved || isSettled) && p.explorerTxUrl && (
                   <a
                     href={p.explorerTxUrl}
                     target="_blank"
@@ -197,7 +215,7 @@ export function Proposals() {
                     className={`mb-2 inline-flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${isExec ? 'text-green-400/70 hover:text-green-400' : 'text-cyan-400/70 hover:text-cyan-400'}`}
                   >
                     <ExternalLink className="h-3 w-3" />
-                    {isExec ? 'Settlement tx' : 'Broadcast tx'} {p.executionTxHash?.slice(0, 10)}…
+                    {(isExec || isSettled) ? 'Settlement tx' : 'Broadcast tx'} {p.executionTxHash?.slice(0, 10)}…
                   </a>
                 )}
 

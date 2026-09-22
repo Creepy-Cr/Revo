@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ARC_TOKENS } from "./arc-tokens";
 import type { MarketQuote } from "./market";
+import { quoteFor } from "./market-fixtures";
 import type { NewsSentiment } from "./news-sentiment";
 import type { XSentiment } from "./x-sentiment";
 import type { WhaleActivity } from "./whale-watch";
@@ -20,7 +21,10 @@ import type { ComputedSignal } from "./signals";
  * stopped mentioning it, and nothing caught it.
  */
 
-vi.mock("./market", () => ({ getMarketQuote: vi.fn() }));
+vi.mock("./market", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./market")>();
+  return { ...actual, getMarketQuote: vi.fn() };
+});
 vi.mock("./x-sentiment", () => ({ fetchXSentiment: vi.fn() }));
 vi.mock("./news-sentiment", () => ({ fetchNewsSentiment: vi.fn() }));
 vi.mock("./whale-watch", () => ({ fetchWhaleActivity: vi.fn() }));
@@ -28,13 +32,7 @@ vi.mock("./discord-sentiment", () => ({ fetchDiscordSentiment: vi.fn() }));
 
 const REGISTRY_SYMBOLS = Object.keys(ARC_TOKENS);
 
-const QUOTE: MarketQuote = {
-  usdcUsd: 0.9999,
-  eurUsd: 1.16,
-  eurChange24h: -0.3,
-  fetchedAt: Date.now(),
-  stale: false,
-};
+const QUOTE: MarketQuote = quoteFor({ USDC: 0.9999, EURC: 1.16 }, { change24hBySymbol: { EURC: -0.3 } });
 
 const xSentiment = (asset: XSentiment["asset"]): XSentiment => ({
   asset,

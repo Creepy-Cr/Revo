@@ -93,7 +93,7 @@ const sections: DocSection[] = [
         </p>
         <DocNote label="Do not">
           Never send unsupported assets to a treasury deposit address. Deposit only USDC on Arc.
-          Treasury holdings and swaps support USDC and EURC; unsupported assets may be unrecoverable.
+          Treasury holdings and swaps support USDC, EURC, syrupUSDC, cirBTC and WETH; wARS is held but never traded; unsupported assets may be unrecoverable.
         </DocNote>
       </>
     ),

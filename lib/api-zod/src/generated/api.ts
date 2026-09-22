@@ -52,7 +52,7 @@ export const GetChainParamsResponse = zod.object({
   "chainId": zod.number().describe('Arc mainnet chain id (5042)'),
   "chainIdHex": zod.string().describe('Chain id as a 0x-prefixed hex string for wallet RPC calls'),
   "chainName": zod.string(),
-  "rpcUrl": zod.string(),
+  "rpcUrl": zod.string().describe('Arc\'s public RPC endpoint for the browser\'s add-chain prompt. Never the server\'s configured provider list.'),
   "usdcAddress": zod.string().describe('USDC ERC-20 interface contract address on Arc'),
   "usdcDecimals": zod.number().describe('Decimals of the USDC ERC-20 interface (6)'),
   "explorerUrl": zod.string()
@@ -395,7 +395,7 @@ export const GetTreasuryWalletInfoResponse = zod.object({
   "chainId": zod.number().describe('Arc mainnet chain id (5042)'),
   "chainIdHex": zod.string().describe('Chain id as a 0x-prefixed hex string for wallet RPC calls'),
   "chainName": zod.string(),
-  "rpcUrl": zod.string(),
+  "rpcUrl": zod.string().describe('Arc\'s public RPC endpoint for the browser\'s add-chain prompt. Never the server\'s configured provider list.'),
   "usdcAddress": zod.string().describe('USDC ERC-20 interface contract address on Arc'),
   "usdcDecimals": zod.number().describe('Decimals of the USDC ERC-20 interface (6)'),
   "explorerUrl": zod.string()
@@ -748,11 +748,13 @@ export const GetTreasurySwapVenueResponse = zod.object({
   "contractsDeployed": zod.boolean().describe('Whether the PoolManager, quoter, UniversalRouter and Permit2 all have code on Arc'),
   "blockNumber": zod.string().nullable().describe('Arc block height at the time of the check'),
   "livePools": zod.array(zod.object({
+  "pair": zod.string().describe('The pool\'s pair, always against USDC, for example \"EURC\/USDC\"'),
   "poolId": zod.string(),
   "feeTier": zod.number(),
   "tickSpacing": zod.number(),
-  "liquidity": zod.string().describe('In-range liquidity as reported by StateView, base units')
-})).describe('Initialised USDC\/EURC pools with in-range liquidity right now'),
+  "liquidity": zod.string().describe('In-range liquidity as reported by StateView, base units'),
+  "tradable": zod.boolean().describe('Whether Revo will route a trade through this pool')
+})).describe('Pinned pools that are initialised with in-range liquidity right now'),
   "swapEnabled": zod.boolean().describe('True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed.'),
   "tokens": zod.array(zod.object({
   "symbol": zod.string(),
@@ -760,6 +762,12 @@ export const GetTreasurySwapVenueResponse = zod.object({
   "address": zod.string(),
   "decimals": zod.number(),
   "role": zod.string().describe('stable | risk'),
+  "issuer": zod.string().describe('Who stands behind the token, as verified from issuer documentation'),
+  "priceSource": zod.string().describe('Where the independent reference price for this token comes from'),
+  "pools": zod.array(zod.object({
+  "feeTier": zod.number(),
+  "tickSpacing": zod.number()
+})).describe('Hook-less Uniswap v4 pools against USDC that Revo has measured and pinned for this token. Empty for USDC itself.'),
   "tradable": zod.boolean().describe('Whether Revo will route a trade in this token. False is a Revo decision about pool quality, not a venue capability.'),
   "untradableReason": zod.string().optional().describe('Why the token is held and priced but never traded')
 })).describe('Tokens Revo has pinned, tradable or otherwise'),

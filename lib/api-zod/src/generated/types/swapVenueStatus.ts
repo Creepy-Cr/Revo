@@ -30,7 +30,7 @@ export interface SwapVenueStatus {
      * @nullable
      */
   blockNumber: string | null;
-  /** Initialised USDC/EURC pools with in-range liquidity right now */
+  /** Pinned pools that are initialised with in-range liquidity right now */
   livePools: SwapVenueStatusLivePoolsItem[];
   /** True only when a real swap could actually be attempted. False means quoting may still work but nothing may be signed. */
   swapEnabled: boolean;

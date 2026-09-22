@@ -22,6 +22,7 @@ import {
 } from "@workspace/db";
 import { ARC_TOKENS } from "./arc-tokens";
 import type { MarketQuote } from "./market";
+import { quoteFor } from "./market-fixtures";
 
 process.env.CUSTODY_MASTER_SECRET ??= "test-only-custody-master-secret";
 
@@ -72,15 +73,15 @@ const LEDGER_USDC = 1000;
 /** Yesterday's healthy NAV; every day-change figure is measured against it. */
 const REFERENCE_NAV = 800;
 
-/** A complete CoinGecko poll: every pinned token has a reference price. */
-function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
-  return {
-    usdcUsd: 1,
-    eurUsd: 1.16,
-    fetchedAt: Date.now(),
-    stale: false,
-    ...overrides,
-  };
+/** A complete poll: every pinned token has a reference price. */
+function quote(
+  usdBySymbol: Record<string, number | undefined> = {},
+  overrides: Partial<Omit<MarketQuote, "prices">> = {},
+): MarketQuote {
+  return quoteFor(
+    { USDC: 1, EURC: 1.16, syrupUSDC: 1.1, cirBTC: 110_000, WETH: 4_000, wARS: 0.00066, ...usdBySymbol },
+    overrides,
+  );
 }
 
 const treasuryIds: string[] = [];
@@ -171,7 +172,7 @@ describe("computeDashboard valuation gate", () => {
     chain = { down: null, balances: { USDC: LEDGER_USDC, EURC: 50 } };
     // CoinGecko omitted EURC on this poll, so part of the book is
     // unpriceable even though the chain read cleanly.
-    getMarketQuote.mockResolvedValue(quote({ eurUsd: undefined }));
+    getMarketQuote.mockResolvedValue(quote({ EURC: undefined }));
 
     const dashboard = await computeDashboard(treasuryId);
 

@@ -8,10 +8,13 @@
  * reject a pool that has drifted from the real market.
  *
  * Pools are identified by key, not by address: v4 pools live inside the
- * singleton PoolManager. Revo pins the hook-less USDC/EURC keys across the
- * standard fee tiers and verifies each one is initialised with in-range
+ * singleton PoolManager. Every pool Revo quotes is a hook-less key against
+ * USDC pinned in the token registry, verified to be initialised with in-range
  * liquidity before it is quoted. A pool that appears later, or one with a
- * hook, is not traded until it has been measured and pinned here.
+ * hook, is not traded until it has been measured and pinned there. Because
+ * every pinned pool has USDC on one side, every trade Revo routes is a single
+ * hop with USDC on one side; a risk-to-risk rotation is two proposals, the
+ * second drafted once the first settles (see rebalance-settlement).
  *
  * Contract addresses are Uniswap Labs' published Arc (chain 5042)
  * deployments and every one was verified to hold bytecode on 21 September
@@ -31,40 +34,50 @@
 
 import {
   encodeAbiParameters,
-  encodeFunctionData,
-  encodePacked,
   keccak256,
   type Address,
   type Hex,
 } from "viem";
 import { ARC_CHAIN_ID, ChainError, arcPublicClient } from "./arc-chain";
-import { ARC_TOKENS, isTradedSymbol, type ArcToken } from "./arc-tokens";
+import { ARC_TOKENS, isTradedSymbol, type ArcToken, type PinnedPool } from "./arc-tokens";
+import {
+  PERMIT2,
+  UNIVERSAL_ROUTER,
+  ZERO_ADDRESS,
+  permit2Abi,
+  poolKeyAbi,
+  type PoolKey,
+} from "./v4-calldata";
+
+export {
+  PERMIT2,
+  UNIVERSAL_ROUTER,
+  encodePermit2Approval,
+  encodeV4Swap,
+  type PoolKey,
+} from "./v4-calldata";
 import { toBaseUnits, fromBaseUnits } from "./tower";
 
 /** Uniswap v4 on Arc mainnet (chain 5042), from Uniswap's deployment registry. */
 export const POOL_MANAGER: Address = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
 export const V4_QUOTER: Address = "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94";
 export const STATE_VIEW: Address = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b";
-export const UNIVERSAL_ROUTER: Address = "0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1";
-/** Canonical Permit2, same address on every chain. The router pulls input tokens through it. */
-export const PERMIT2: Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
 export const VENUE = "uniswap-v4" as const;
 
-const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
 
 /**
- * Hook-less pool tiers Revo will quote. Uniswap's standard tiers plus the two
- * 1-tick-spacing stable tiers that exist for USDC/EURC on Arc. Order does not
- * matter: every initialised tier is quoted and the best output wins.
+ * The pinned pools a pair can be quoted on: the non-USDC token's registry
+ * entries, or none when neither side is USDC. Order does not matter: every
+ * initialised pool is quoted and the best output wins.
  */
-const POOL_TIERS: ReadonlyArray<{ fee: number; tickSpacing: number }> = [
-  { fee: 10, tickSpacing: 1 },
-  { fee: 100, tickSpacing: 1 },
-  { fee: 500, tickSpacing: 10 },
-  { fee: 3000, tickSpacing: 60 },
-  { fee: 10000, tickSpacing: 200 },
-];
+export function pinnedPoolsFor(a: ArcToken, b: ArcToken): ReadonlyArray<PinnedPool> {
+  const usdc = ARC_TOKENS.USDC!;
+  const isUsdc = (t: ArcToken) => t.address.toLowerCase() === usdc.address.toLowerCase();
+  if (isUsdc(a) && !isUsdc(b)) return b.pools;
+  if (isUsdc(b) && !isUsdc(a)) return a.pools;
+  return [];
+}
 
 /**
  * Routes quoting worse than this measured impact are refused. Mainnet
@@ -91,14 +104,6 @@ export const SLIPPAGE_BPS = 30;
 export const SWAP_DEADLINE_SECONDS = 180;
 
 /** The v4 pool key. `currency0` sorts below `currency1`; the zero address is the native asset. */
-export interface PoolKey {
-  currency0: Address;
-  currency1: Address;
-  fee: number;
-  tickSpacing: number;
-  hooks: Address;
-}
-
 export function poolIdFor(key: PoolKey): Hex {
   return keccak256(
     encodeAbiParameters(
@@ -114,23 +119,11 @@ export function poolIdFor(key: PoolKey): Hex {
   );
 }
 
-function poolKeyFor(a: ArcToken, b: ArcToken, tier: { fee: number; tickSpacing: number }): PoolKey {
+function poolKeyFor(a: ArcToken, b: ArcToken, tier: PinnedPool): PoolKey {
   const [currency0, currency1] =
     BigInt(a.address) < BigInt(b.address) ? [a.address, b.address] : [b.address, a.address];
   return { currency0, currency1, fee: tier.fee, tickSpacing: tier.tickSpacing, hooks: ZERO_ADDRESS };
 }
-
-const poolKeyAbi = {
-  type: "tuple",
-  name: "poolKey",
-  components: [
-    { type: "address", name: "currency0" },
-    { type: "address", name: "currency1" },
-    { type: "uint24", name: "fee" },
-    { type: "int24", name: "tickSpacing" },
-    { type: "address", name: "hooks" },
-  ],
-} as const;
 
 const stateViewAbi = [
   {
@@ -182,56 +175,6 @@ const quoterAbi = [
     ],
   },
 ] as const;
-
-export const permit2Abi = [
-  {
-    name: "allowance",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { type: "address", name: "owner" },
-      { type: "address", name: "token" },
-      { type: "address", name: "spender" },
-    ],
-    outputs: [
-      { type: "uint160", name: "amount" },
-      { type: "uint48", name: "expiration" },
-      { type: "uint48", name: "nonce" },
-    ],
-  },
-  {
-    name: "approve",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { type: "address", name: "token" },
-      { type: "address", name: "spender" },
-      { type: "uint160", name: "amount" },
-      { type: "uint48", name: "expiration" },
-    ],
-    outputs: [],
-  },
-] as const;
-
-const universalRouterAbi = [
-  {
-    name: "execute",
-    type: "function",
-    stateMutability: "payable",
-    inputs: [
-      { type: "bytes", name: "commands" },
-      { type: "bytes[]", name: "inputs" },
-      { type: "uint256", name: "deadline" },
-    ],
-    outputs: [],
-  },
-] as const;
-
-/** UniversalRouter command and v4 router actions, from the Uniswap sources. */
-const COMMAND_V4_SWAP = 0x10;
-const ACTION_SWAP_EXACT_IN_SINGLE = 0x06;
-const ACTION_SETTLE_ALL = 0x0c;
-const ACTION_TAKE_ALL = 0x0f;
 
 export interface SwapQuote {
   venue: typeof VENUE;
@@ -286,8 +229,8 @@ interface TierQuote {
   poolId: Hex;
   zeroForOne: boolean;
   amountOut: bigint;
-  dustIn: bigint;
-  spotOut: bigint;
+  /** Output per unit of input at the pool's current tick, net of the LP fee, in whole-token terms. */
+  spotRate: number;
   /** Output-side depth within a 2% move, base units. */
   depthOut: bigint;
 }
@@ -299,12 +242,28 @@ function refuse(
   return { ...base, tradable: false, reason };
 }
 
-/** One hundredth of a whole token: small enough to read the spot rate, large enough to clear rounding. */
-function dustAmount(token: ArcToken): bigint {
-  return 10n ** BigInt(Math.max(token.decimals - 2, 0));
-}
-
 const Q96 = 2n ** 96n;
+
+/**
+ * The pool's marginal rate, read from slot0 rather than probed with a dust
+ * swap. A probe has to be sized per pair: one hundredth of a token is a
+ * thousand dollars of cirBTC yet rounds to a handful of satoshis coming the
+ * other way, and either error shows up as phantom price impact. The tick
+ * price is exact in both directions. The LP fee is taken off so the figure
+ * is comparable with what the quoter returns for a real amount.
+ */
+export function spotRateFromSqrtPrice(
+  sqrtPriceX96: bigint,
+  zeroForOne: boolean,
+  fee: number,
+  decimalsIn: number,
+  decimalsOut: number,
+): number {
+  const sqrt = Number(sqrtPriceX96) / 2 ** 96;
+  const token1PerToken0 = sqrt * sqrt;
+  const baseRate = zeroForOne ? token1PerToken0 : 1 / token1PerToken0;
+  return baseRate * 10 ** (decimalsIn - decimalsOut) * (1 - fee / 1_000_000);
+}
 /** sqrt(0.98) and 1/sqrt(1.02), scaled by 1e9, for the 2% depth calculation. */
 const SQRT_DOWN_2PCT = 989_949_494n;
 const INV_SQRT_UP_2PCT = 990_147_543n;
@@ -347,7 +306,7 @@ async function quoteExactIn(key: PoolKey, zeroForOne: boolean, amountIn: bigint)
 async function quoteTier(
   input: ArcToken,
   output: ArcToken,
-  tier: { fee: number; tickSpacing: number },
+  tier: PinnedPool,
   amountIn: bigint,
 ): Promise<TierQuote | null> {
   const key = poolKeyFor(input, output, tier);
@@ -361,19 +320,14 @@ async function quoteTier(
   const sqrtPriceX96 = slot0[0];
   if (sqrtPriceX96 === 0n || liquidity === 0n) return null;
 
-  const dustIn = dustAmount(input);
-  const [amountOut, spotOut] = await Promise.all([
-    quoteExactIn(key, zeroForOne, amountIn),
-    quoteExactIn(key, zeroForOne, dustIn),
-  ]);
-  if (amountOut === null || spotOut === null) return null;
+  const amountOut = await quoteExactIn(key, zeroForOne, amountIn);
+  if (amountOut === null) return null;
   return {
     key,
     poolId,
     zeroForOne,
     amountOut,
-    dustIn,
-    spotOut,
+    spotRate: spotRateFromSqrtPrice(sqrtPriceX96, zeroForOne, key.fee, input.decimals, output.decimals),
     depthOut: depthWithin2Pct(liquidity, sqrtPriceX96, zeroForOne),
   };
 }
@@ -433,9 +387,17 @@ export async function getSwapQuote(request: SwapQuoteRequest): Promise<SwapQuote
   }
   const withUnits = { ...skeleton, inputBaseUnits: amountIn.toString() };
 
+  const pools = pinnedPoolsFor(input, output);
+  if (pools.length === 0) {
+    return refuse(
+      withUnits,
+      `Revo routes every trade through USDC and has no pinned ${inputSymbol}/${outputSymbol} pool on Uniswap v4; rotate via USDC in two steps instead`,
+    );
+  }
+
   let tiers: (TierQuote | null)[];
   try {
-    tiers = await Promise.all(POOL_TIERS.map((tier) => quoteTier(input, output, tier, amountIn)));
+    tiers = await Promise.all(pools.map((tier) => quoteTier(input, output, tier, amountIn)));
   } catch (error) {
     // Not a verdict on the route: the pool could not be read. Callers must
     // retry later rather than record the swap as untradable.
@@ -471,12 +433,10 @@ export async function getSwapQuote(request: SwapQuoteRequest): Promise<SwapQuote
   }
   const impliedRate = outValue / inValue;
 
-  // Impact measured against the pool's own dust-sized spot rate.
-  const dustInHuman = Number(fromBaseUnits(best.dustIn, input.decimals));
-  const dustOutHuman = Number(fromBaseUnits(best.spotOut, output.decimals));
-  const spotRate = dustInHuman > 0 && dustOutHuman > 0 ? dustOutHuman / dustInHuman : null;
+  // Impact measured against the pool's own marginal rate at the current tick.
+  const spotRate = best.spotRate;
   const priceImpactPct =
-    spotRate !== null && spotRate > 0 ? ((spotRate - impliedRate) / spotRate) * 100 : null;
+    Number.isFinite(spotRate) && spotRate > 0 ? ((spotRate - impliedRate) / spotRate) * 100 : null;
 
   const priced: Omit<SwapQuote, "tradable" | "reason"> = {
     ...withUnits,
@@ -562,70 +522,6 @@ export async function getSwapQuote(request: SwapQuoteRequest): Promise<SwapQuote
  * router settles the input through Permit2 (so the treasury must hold a
  * Permit2 allowance for it) and pays the output to the caller.
  */
-export function encodeV4Swap(params: {
-  key: PoolKey;
-  input: Address;
-  output: Address;
-  amountIn: bigint;
-  minOut: bigint;
-  deadline: bigint;
-}): Hex {
-  const { key, input, output, amountIn, minOut, deadline } = params;
-  const zeroForOne = key.currency0.toLowerCase() === input.toLowerCase();
-  if (!zeroForOne && key.currency1.toLowerCase() !== input.toLowerCase()) {
-    throw new Error("Swap input is not one of the pool's currencies");
-  }
-  if (amountIn <= 0n || amountIn >= 2n ** 128n || minOut <= 0n || minOut >= 2n ** 128n) {
-    throw new Error("Swap amounts must fit uint128 and be positive");
-  }
-  const actions = encodePacked(
-    ["uint8", "uint8", "uint8"],
-    [ACTION_SWAP_EXACT_IN_SINGLE, ACTION_SETTLE_ALL, ACTION_TAKE_ALL],
-  );
-  // The router deployed on Arc decodes the earlier v4-periphery
-  // ExactInputSingleParams, which still carries `sqrtPriceLimitX96`. Verified
-  // on 22 September 2026 by simulating both layouts against the live router:
-  // this one executes, the five-field layout reverts. Zero means "no price
-  // limit"; `amountOutMinimum` is the protection.
-  const swapParams = encodeAbiParameters(
-    [
-      {
-        type: "tuple",
-        components: [
-          poolKeyAbi,
-          { type: "bool", name: "zeroForOne" },
-          { type: "uint128", name: "amountIn" },
-          { type: "uint128", name: "amountOutMinimum" },
-          { type: "uint160", name: "sqrtPriceLimitX96" },
-          { type: "bytes", name: "hookData" },
-        ],
-      },
-    ],
-    [{ poolKey: key, zeroForOne, amountIn, amountOutMinimum: minOut, sqrtPriceLimitX96: 0n, hookData: "0x" }],
-  );
-  const settleParams = encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [input, amountIn]);
-  const takeParams = encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [output, minOut]);
-  const v4Input = encodeAbiParameters(
-    [{ type: "bytes" }, { type: "bytes[]" }],
-    [actions, [swapParams, settleParams, takeParams]],
-  );
-  return encodeFunctionData({
-    abi: universalRouterAbi,
-    functionName: "execute",
-    args: [encodePacked(["uint8"], [COMMAND_V4_SWAP]), [v4Input], deadline],
-  });
-}
-
-/** Permit2 `approve(token, spender, amount, expiration)` calldata: exact amount, short expiry. */
-export function encodePermit2Approval(token: Address, amount: bigint, expiration: number): Hex {
-  if (amount <= 0n || amount >= 2n ** 160n) throw new Error("Permit2 amount must fit uint160");
-  return encodeFunctionData({
-    abi: permit2Abi,
-    functionName: "approve",
-    args: [token, UNIVERSAL_ROUTER, amount, expiration],
-  });
-}
-
 /** What Permit2 currently lets the router pull from `owner` in `token`. */
 export async function readPermit2Allowance(
   owner: Address,
@@ -647,8 +543,16 @@ export interface VenueStatus {
   quoterDeployed: boolean;
   routerDeployed: boolean;
   permit2Deployed: boolean;
-  /** Initialised USDC/EURC pools with in-range liquidity, by fee tier. */
-  livePools: Array<{ poolId: Hex; feeTier: number; tickSpacing: number; liquidity: string }>;
+  /** Pinned pools that are initialised with in-range liquidity right now. */
+  livePools: Array<{
+    pair: string;
+    poolId: Hex;
+    feeTier: number;
+    tickSpacing: number;
+    liquidity: string;
+    /** Whether Revo will route a trade through this pool, whatever its depth. */
+    tradable: boolean;
+  }>;
   error?: string;
 }
 
@@ -665,11 +569,13 @@ export async function checkVenue(): Promise<VenueStatus> {
     ]);
     const deployed = (code: Hex | undefined) => typeof code === "string" && code.length > 2;
     const usdc = ARC_TOKENS["USDC"]!;
-    const eurc = ARC_TOKENS["EURC"]!;
     const livePools: VenueStatus["livePools"] = [];
+    const pinned = Object.values(ARC_TOKENS).flatMap((token) =>
+      token.pools.map((tier) => ({ token, tier })),
+    );
     await Promise.all(
-      POOL_TIERS.map(async (tier) => {
-        const key = poolKeyFor(usdc, eurc, tier);
+      pinned.map(async ({ token, tier }) => {
+        const key = poolKeyFor(usdc, token, tier);
         const poolId = poolIdFor(key);
         const liquidity = await client.readContract({
           address: STATE_VIEW,
@@ -678,11 +584,18 @@ export async function checkVenue(): Promise<VenueStatus> {
           args: [poolId],
         });
         if (liquidity > 0n) {
-          livePools.push({ poolId, feeTier: tier.fee, tickSpacing: tier.tickSpacing, liquidity: liquidity.toString() });
+          livePools.push({
+            pair: `${token.symbol}/USDC`,
+            poolId,
+            feeTier: tier.fee,
+            tickSpacing: tier.tickSpacing,
+            liquidity: liquidity.toString(),
+            tradable: token.tradable,
+          });
         }
       }),
     );
-    livePools.sort((a, b) => a.feeTier - b.feeTier);
+    livePools.sort((a, b) => a.pair.localeCompare(b.pair) || a.feeTier - b.feeTier);
     return {
       reachable: true,
       blockNumber: blockNumber.toString(),

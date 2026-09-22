@@ -26,7 +26,8 @@ import {
   treasuryStateTable,
 } from "@workspace/db";
 import { ARC_CHAIN_NAME } from "../lib/arc-chain";
-import { ARC_TOKENS } from "../lib/arc-tokens";
+import { ARC_TOKENS, priceIdOf } from "../lib/arc-tokens";
+import { quoteFor } from "../lib/market-fixtures";
 
 const TEST_TREASURY_ID = `test-treasury-dashboard-${randomUUID()}`;
 const OPERATOR_WALLET = "0x0000000000000000000000000000000000000004";
@@ -57,13 +58,12 @@ vi.mock("../lib/market", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/market")>();
   return {
     ...actual,
-    getMarketQuote: vi.fn(async () => ({
-      usdcUsd: 1,
-      eurUsd: 1.16,
-      eurChange24h: 0,
-      fetchedAt: Date.now(),
-      stale: false,
-    })),
+    getMarketQuote: vi.fn(async () =>
+      quoteFor(
+        { USDC: 1, EURC: 1.16, syrupUSDC: 1.1, cirBTC: 110_000, WETH: 4_000, wARS: 0.00066 },
+        { change24hBySymbol: { EURC: 0 } },
+      ),
+    ),
   };
 });
 
@@ -83,7 +83,7 @@ vi.mock("../lib/holdings", async (importOriginal) => {
         role: token.role,
         tradable: token.tradable,
         ...(token.untradableReason ? { untradableReason: token.untradableReason } : {}),
-        coingeckoId: token.coingeckoId,
+        priceId: priceIdOf(token.price),
         units: token.symbol === "USDC" ? 500 : 0,
         raw: token.symbol === "USDC" ? (500n * 10n ** BigInt(token.decimals)).toString() : "0",
       })),

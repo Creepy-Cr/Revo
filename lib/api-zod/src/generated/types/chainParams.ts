@@ -12,6 +12,7 @@ export interface ChainParams {
   /** Chain id as a 0x-prefixed hex string for wallet RPC calls */
   chainIdHex: string;
   chainName: string;
+  /** Arc's public RPC endpoint for the browser's add-chain prompt. Never the server's configured provider list. */
   rpcUrl: string;
   /** USDC ERC-20 interface contract address on Arc */
   usdcAddress: string;

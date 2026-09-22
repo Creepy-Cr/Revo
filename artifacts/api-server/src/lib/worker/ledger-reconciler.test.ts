@@ -14,7 +14,7 @@ vi.mock("../security-controls", () => ({ setEmergencyPause }));
 vi.mock("../market", () => ({
   getMarketQuote,
   referencePriceFor: (id: string, quote: { usdcUsd: number; eurUsd?: number } | null) =>
-    id === "usd-coin" ? quote?.usdcUsd : id === "euro-coin" ? quote?.eurUsd : undefined,
+    id === "coingecko:usd-coin" ? quote?.usdcUsd : id === "coingecko:euro-coin" ? quote?.eurUsd : undefined,
 }));
 
 const { processTreasury } = await import("./ledger-reconciler");
@@ -27,8 +27,8 @@ function holdings(usdc: number, eurc = 0) {
     walletAddress: "0x0000000000000000000000000000000000000001",
     readAt: new Date().toISOString(),
     holdings: [
-      { symbol: "USDC", coingeckoId: "usd-coin", units: usdc },
-      { symbol: "EURC", coingeckoId: "euro-coin", units: eurc },
+      { symbol: "USDC", priceId: "coingecko:usd-coin", units: usdc },
+      { symbol: "EURC", priceId: "coingecko:euro-coin", units: eurc },
     ],
   };
 }

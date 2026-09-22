@@ -48,7 +48,8 @@ exactly what the rules are. Revo replaces that with three things:
    transactions on Arc mainnet, paid for in USDC, confirmed from receipts and reconciled by
    background workers that survive restarts.
 
-Revo custodies and moves real USDC and EURC on Arc mainnet. The chain guard refuses any chain
+Revo custodies and moves real tokens on Arc mainnet: USDC, EURC, syrupUSDC, cirBTC and WETH,
+plus wARS which it holds and values but never trades. The chain guard refuses any chain
 other than Arc (chain id `5042`). Use involves smart contract, custody, stablecoin, liquidity
 and operational risk, including possible loss of funds.
 
@@ -76,8 +77,12 @@ the reason a treasury product like this can be simple:
 
 - **USDC is the native gas token.** A treasury never has to hold a separate volatile asset just
   to pay fees. Revo checks spendable USDC, not just held USDC, before every send.
-- **Circle-issued stablecoins on both sides of the book.** The two assets Revo supports and
-  rebalances are native USDC and EURC.
+- **A pinned token registry, not a token list.** Revo trades only tokens whose contract
+  address is confirmed against the issuer's own documentation or the Arc registry: native
+  USDC and EURC (Circle), syrupUSDC (Maple), cirBTC (Circle) and WETH (Arc bridge). wARS
+  (Ripio) is held and valued at the official BCRA rate but never traded, because the Arc pool
+  sits about 5% away from the only independent reference. Tokens named after stocks or
+  companies on Arc's venue are anonymous mints and are refused outright.
 - **Circle Gateway** gives the custody wallet a unified USDC balance view across every
   Gateway-supported chain, read through Circle App Kit and shown per chain in the console.
 - **Deterministic finality and predictable fees**, which is what lets settlement reconcile
@@ -90,7 +95,12 @@ the reason a treasury product like this can be simple:
 | Explorer | [arc-scan.org](https://arc-scan.org) |
 | Native USDC | [`0x3600000000000000000000000000000000000000`](https://arc-scan.org/address/0x3600000000000000000000000000000000000000) (6 decimals) |
 | EURC | [`0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`](https://arc-scan.org/address/0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1) (6 decimals) |
-| Swap venue | Uniswap v4, USDC/EURC 0.05% pool (`fee 500`, `tickSpacing 10`): PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`, V4Quoter `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`, StateView `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b`, UniversalRouter `0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1`, Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
+| syrupUSDC | [`0x0dC6b79F3c3854E4d74514fD4d29BE6c96Beee39`](https://arc-scan.org/address/0x0dC6b79F3c3854E4d74514fD4d29BE6c96Beee39) (6 decimals, Maple) |
+| cirBTC | [`0x171A4217b86A807A64eB94757Db6849fb4bDbAA0`](https://arc-scan.org/address/0x171A4217b86A807A64eB94757Db6849fb4bDbAA0) (8 decimals, Circle) |
+| WETH | [`0x128cC466B61f542da60c70e3aA11c10e19B84EDB`](https://arc-scan.org/address/0x128cC466B61f542da60c70e3aA11c10e19B84EDB) (18 decimals, Arc bridge) |
+| wARS | [`0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D`](https://arc-scan.org/address/0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D) (held only, never traded) |
+| Pinned pools | Every pool has USDC on one side and no hook: EURC/USDC (`fee 10, 100, 500, 3000, 10000`), syrupUSDC/USDC (`fee 500`), cirBTC/USDC (`fee 3000`), WETH/USDC (`fee 2500`), wARS/USDC (`fee 100`, read only). Every rebalance is one swap per proposal; a target that needs more than one leg (any risk-to-risk move goes through USDC) is walked leg by leg, each settled proposal saying whether the target is reached and drafting the next leg from live balances. Managed mode approves each leg; Autonomous mode auto-approves them under the same gates, at most 12 an hour per policy. |
+| Swap venue | Uniswap v4: PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`, V4Quoter `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`, StateView `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b`, UniversalRouter `0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1`, Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
 | Token registry | [Tower Exchange](https://docs.tower.exchange) public API, used as a secondary cross-check of token addresses; it never authorises a trade |
 
 Useful Arc links: [Arc docs](https://docs.arc.network) ·
@@ -128,10 +138,11 @@ Four planes, one database, no shared mutable state outside PostgreSQL:
 
 ### Custody and limits
 
-- Each treasury uses a server-side sealed key. The signer allowlist permits only USDC and EURC
-  transfers and approvals, Permit2 approvals and UniversalRouter execution.
+- Each treasury uses a server-side sealed key. The signer allowlist permits only transfers
+  and approvals of pinned tokens, Permit2 approvals and UniversalRouter execution.
 - The emergency pause is re-checked at signing. Rebalances have absolute USD caps per trade and
-  per day, and signing refuses stale prices or a Circle-blocklisted or paused token.
+  per day, and signing refuses stale prices or a token whose issuer has paused it or blocked
+  the wallet. Only the controls each issuer contract really exposes are read.
 - Swaps allow at most 1% price impact, 2% reference-price deviation, 30 bps slippage and 10% of
   the pool's 2% depth. The deadline is 180 seconds, and exact-amount Permit2 approvals expire
   with the swap.
@@ -150,13 +161,14 @@ re-rendered with `pnpm --filter @workspace/scripts run render-architecture`.
 
 **Deterministic policy engine**
 - Allocation caps 5 to 35% per sleeve, liquid reserve 25 to 80%, max drawdown 5 to 30%
-- EURC sleeve sized by risk tolerance (4, 10 or 16%) with a 1 percentage point drift threshold
+- Risk sleeve sized by risk tolerance (4, 10 or 16%), split across EURC, syrupUSDC, cirBTC and
+  WETH by policy weights (whole sleeve in EURC when none are given), 1 percentage point drift threshold
 - One active policy, superseding the previous one; every proposal carries its rationale
 
 **Custody and settlement on Arc**
 - Per-treasury EOA, envelope-encrypted, never persisted in plaintext
 - Real USDC deposits and withdrawals with confirmation depth, reorg handling and refunds
-- Real USDC and EURC swaps through Uniswap v4 with price impact and pool share limits, gas paid in USDC
+- Real swaps through Uniswap v4, always with USDC on one side, with price impact and pool share limits, gas paid in USDC
 - Circle Gateway unified balance reads, per chain, through Circle App Kit
 
 **Controls operators actually have**
@@ -167,7 +179,7 @@ re-rendered with `pnpm --filter @workspace/scripts run render-architecture`.
 - Hash-chained audit trail, alerts and an exploit drill that rehearses the response without touching funds
 
 **Signals and monitoring**
-- CoinGecko market data with 24 h momentum and USDC peg deviation, scored into 0 to 100 composites
+- CoinGecko market data and Frankfurter official FX fixes, with 24 h momentum and USDC peg deviation, scored into 0 to 100 composites
 - Arc whale watch on USDC transfers, issuer GitHub activity, crypto news RSS
 - Optional X and Discord feeds; a drawdown monitor that alerts when the active policy's limit is breached
 

@@ -7,9 +7,13 @@
  */
 
 export type SwapVenueStatusLivePoolsItem = {
+  /** The pool's pair, always against USDC, for example "EURC/USDC" */
+  pair: string;
   poolId: string;
   feeTier: number;
   tickSpacing: number;
   /** In-range liquidity as reported by StateView, base units */
   liquidity: string;
+  /** Whether Revo will route a trade through this pool */
+  tradable: boolean;
 };

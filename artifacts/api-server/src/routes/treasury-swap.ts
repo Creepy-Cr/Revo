@@ -6,8 +6,9 @@ import {
 } from "@workspace/api-zod";
 import { requireOperator } from "../lib/auth";
 import { llmGuard } from "../lib/llm-guard";
-import { ARC_TOKENS } from "../lib/arc-tokens";
-import { getMarketQuote, referencePriceFor } from "../lib/market";
+import { ARC_TOKENS, describePriceSource, priceIdOf } from "../lib/arc-tokens";
+import { getMarketQuote, referenceEntryFor } from "../lib/market";
+import { isCurrentReference } from "../lib/custody-policy";
 import { getTowerRegistry, isTowerConfigured } from "../lib/tower";
 import { ARC_CHAIN_ID, ARC_CHAIN_NAME, ChainError } from "../lib/arc-chain";
 import { UNIVERSAL_ROUTER, VENUE, checkVenue, getSwapQuote } from "../lib/uniswap-v4";
@@ -33,8 +34,8 @@ const quoteGuard = llmGuard({
  * venue is down" apart from "this particular pair has no liquidity", and a
  * single quote endpoint conflates the two.
  *
- * Two different things are probed. Uniswap v4's contracts on Arc and a live
- * USDC/EURC pool are what a swap would actually execute against, so they
+ * Two different things are probed. Uniswap v4's contracts on Arc and at least
+ * one live pinned pool are what a swap would actually execute against, so they
  * decide `swapEnabled`. The Tower catalogue is a secondary cross-check on
  * token addresses; losing it degrades validation but does not stop a trade,
  * so it does not gate here.
@@ -63,7 +64,7 @@ router.get("/treasury/swap/venue", requireOperator(), async (_req, res): Promise
     reason =
       "The Uniswap v4 PoolManager, quoter, router or Permit2 is not deployed at the pinned address on Arc";
   } else if (!poolLive) {
-    reason = "No USDC/EURC pool on Uniswap v4 currently has in-range liquidity";
+    reason = "None of Revo's pinned Uniswap v4 pools currently has in-range liquidity";
   } else if (!configured) {
     reason =
       "Swaps are live, but no venue-catalogue credentials are configured so token addresses cannot be cross-checked";
@@ -91,6 +92,9 @@ router.get("/treasury/swap/venue", requireOperator(), async (_req, res): Promise
         address: token.address,
         decimals: token.decimals,
         role: token.role,
+        issuer: token.issuer,
+        priceSource: describePriceSource(token.price),
+        pools: token.pools.map((p) => ({ feeTier: p.fee, tickSpacing: p.tickSpacing })),
         tradable: token.tradable,
         ...(token.untradableReason ? { untradableReason: token.untradableReason } : {}),
       })),
@@ -120,14 +124,20 @@ router.post(
     }
     const { inputSymbol, outputSymbol, amount } = parsed.data;
 
-    // Reference prices come from the token's own CoinGecko id rather than a
-    // symbol switch, so adding a token cannot silently ship without the
-    // independent price check that gates whether it may be traded at all.
+    // Reference prices come from the token's own registered price source
+    // rather than a symbol switch, so adding a token cannot silently ship
+    // without the independent price check that gates whether it may be
+    // traded at all. Only a current price counts: a stale one is withheld,
+    // and the quote then refuses for want of a reference rather than
+    // checking the pool against a market that has since moved.
     const market = await getMarketQuote();
-    const inputId = ARC_TOKENS[inputSymbol]?.coingeckoId;
-    const outputId = ARC_TOKENS[outputSymbol]?.coingeckoId;
-    const inputUsd = inputId ? referencePriceFor(inputId, market) : undefined;
-    const outputUsd = outputId ? referencePriceFor(outputId, market) : undefined;
+    const currentUsd = (symbol: string): number | undefined => {
+      const token = ARC_TOKENS[symbol];
+      const entry = token ? referenceEntryFor(priceIdOf(token.price), market) : undefined;
+      return entry && isCurrentReference(entry) ? entry.usd : undefined;
+    };
+    const inputUsd = currentUsd(inputSymbol);
+    const outputUsd = currentUsd(outputSymbol);
 
     let quote;
     try {

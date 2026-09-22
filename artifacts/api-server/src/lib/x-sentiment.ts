@@ -32,7 +32,7 @@ const MAX_RESULTS = 25; // per asset per refresh
  * Assets the sentiment pipeline follows. These mirror the pinned Arc token
  * registry.
  */
-export type XSentimentAsset = "EURC" | "USDC";
+export type XSentimentAsset = "EURC" | "USDC" | "syrupUSDC" | "cirBTC" | "WETH" | "wARS";
 
 export interface XSentiment {
   asset: XSentimentAsset;
@@ -45,9 +45,18 @@ export interface XSentiment {
   fetchedAt: number;
 }
 
+/**
+ * One query per pinned token. Wrapped assets are searched by what they wrap:
+ * nobody posts about cirBTC, they post about bitcoin, and that is what the
+ * sleeve's value follows.
+ */
 const QUERIES: Record<XSentimentAsset, string> = {
   EURC: '(eurc OR "euro coin") lang:en -is:retweet -is:reply',
   USDC: '(usdc OR "usd coin") lang:en -is:retweet -is:reply',
+  syrupUSDC: '(syrupusdc OR "maple finance" OR syrupfi) lang:en -is:retweet -is:reply',
+  cirBTC: '(bitcoin OR btc) lang:en -is:retweet -is:reply',
+  WETH: '(ethereum OR eth) lang:en -is:retweet -is:reply',
+  wARS: '("argentine peso" OR "peso argentino" OR bcra OR ripio) lang:en -is:retweet -is:reply',
 };
 
 /** Defensively extract post texts from an X v2 recent-search payload. */

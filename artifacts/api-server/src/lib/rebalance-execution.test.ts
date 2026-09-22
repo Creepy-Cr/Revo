@@ -8,7 +8,7 @@
  * first one already sent money.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MarketQuote } from "./market";
+import { quoteFor as marketQuoteFor } from "./market-fixtures";
 
 const readCustodyHoldings = vi.fn();
 const getSwapQuote = vi.fn();
@@ -35,7 +35,7 @@ function nextHash(): string {
 const WALLET = "0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0";
 const USDC = "0x3600000000000000000000000000000000000000";
 const EURC = "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1";
-const CIRBTC = "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF";
+const CIRBTC = "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0";
 const POOL = "0x1111111111111111111111111111111111111111";
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
@@ -101,7 +101,7 @@ const { ChainError } = await import("./arc-chain");
 
 const TREASURY = "t-1";
 /** USDC at 1.00, EURC at 1.16. */
-const QUOTE = { usdcUsd: 1, eurUsd: 1.16 } as MarketQuote;
+const QUOTE = marketQuoteFor({ USDC: 1, EURC: 1.16 });
 
 /** 60/40 split by USD value, with the whole book priceable. */
 function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
@@ -117,7 +117,7 @@ function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
         role: "stable",
         tradable: true,
         address: USDC,
-        coingeckoId: "usd-coin",
+        priceId: "coingecko:usd-coin",
         units: usdcUnits,
         raw: BigInt(Math.round(usdcUnits * 1e6)).toString(),
       },
@@ -128,7 +128,7 @@ function holdings(usdcUnits: number, eurcUnits: number, extra: unknown[] = []) {
         role: "risk",
         tradable: true,
         address: EURC,
-        coingeckoId: "euro-coin",
+        priceId: "coingecko:euro-coin",
         units: eurcUnits,
         raw: BigInt(Math.round(eurcUnits * 1e6)).toString(),
       },
@@ -440,18 +440,15 @@ describe("settleRebalance", () => {
           decimals: 8,
           role: "risk",
           tradable: false,
-          address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
-          coingeckoId: "bitcoin",
+          address: CIRBTC,
+          priceId: "coingecko:bitcoin",
           units: 0.5,
           raw: "50000000",
         },
       ]),
     );
     // CoinGecko omitted BTC on this poll; the denominator is now unknowable.
-    const outcome = await settleRebalance(TREASURY, TARGETS, {
-      usdcUsd: 1,
-      eurUsd: 1.16,
-    } as MarketQuote);
+    const outcome = await settleRebalance(TREASURY, TARGETS, marketQuoteFor({ USDC: 1, EURC: 1.16 }));
 
     expect(outcome.kind).toBe("refused");
     if (outcome.kind !== "refused") return;
@@ -468,15 +465,16 @@ describe("settleRebalance", () => {
     expect(signCustodyCall).not.toHaveBeenCalled();
   });
 
-  it("sends nothing for sub-dust drift the venue cannot price", async () => {
-    // A drift worth well under 0.01 USDC.
-    readCustodyHoldings.mockResolvedValue(holdings(580.002, 500));
+  it("sends nothing for drift worth less than a dollar", async () => {
+    // A 50/50 target over 1080.5 USD leaves USDC 0.25 over: below the floor
+    // where gas and pool fee would eat the whole move.
+    readCustodyHoldings.mockResolvedValue(holdings(580.5, 500));
 
     const outcome = await settleRebalance(TREASURY, TARGETS, QUOTE);
 
     expect(outcome.kind).toBe("nothing-to-do");
     if (outcome.kind !== "nothing-to-do") return;
-    expect(outcome.reason).toContain("0.01");
+    expect(outcome.reason).toContain("$1");
     expect(signCustodyCall).not.toHaveBeenCalled();
   });
 
@@ -714,8 +712,8 @@ describe("settleRebalance", () => {
       decimals: 8,
       role: "risk",
       tradable: false,
-      address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
-      coingeckoId: "bitcoin",
+      address: CIRBTC,
+      priceId: "coingecko:bitcoin",
       units: 0.5,
       raw: "50000000",
     };
@@ -813,6 +811,245 @@ describe("settleRebalance", () => {
  * when the settlement that started it died: there is no pre-trade balance
  * left to measure against, only the transaction itself.
  */
+describe("planning legs through USDC", () => {
+  const WETH = "0x128cC466B61f542da60c70e3aA11c10e19B84EDB";
+  const wethHolding = (units: number) => ({
+    symbol: "WETH",
+    name: "Ether sleeve",
+    decimals: 18,
+    role: "risk",
+    tradable: true,
+    address: WETH,
+    priceId: "coingecko:ethereum",
+    units,
+    raw: BigInt(Math.round(units * 1e6)).toString() + "000000000000",
+  });
+  const cirBtcHolding = (units: number) => ({
+    symbol: "cirBTC",
+    name: "Bitcoin sleeve",
+    decimals: 8,
+    role: "risk",
+    tradable: true,
+    address: CIRBTC,
+    priceId: "coingecko:bitcoin",
+    units,
+    raw: BigInt(Math.round(units * 1e8)).toString(),
+  });
+  const book = marketQuoteFor({ USDC: 1, EURC: 1.16, WETH: 4_000, cirBTC: 100_000 });
+
+  it("sells the overweight risk asset first when the reserve is already on target", async () => {
+    // 1000 USDC, 200 EURC (232 USD), 0.1 WETH (400 USD): book 1632 USD.
+    // Target 61% USDC / 15% EURC / 24% WETH puts USDC 4.5 USD over, EURC
+    // 12.8 under and WETH 8.3 over. The EURC purchase can only draw on the
+    // 4.5 USD reserve surplus, so the WETH sale is the larger leg and goes
+    // first; EURC is topped up on the next approval from the USDC it frees.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 200, [wethHolding(0.1)]));
+    const outcome = await settleRebalance(
+      TREASURY,
+      [
+        { symbol: "USDC", percentage: 61 },
+        { symbol: "EURC", percentage: 15 },
+        { symbol: "WETH", percentage: 24 },
+      ],
+      book,
+    );
+    expect(getSwapQuote).toHaveBeenCalledTimes(1);
+    const req = getSwapQuote.mock.calls[0]![0] as { inputSymbol: string; outputSymbol: string; amount: string };
+    expect(req.inputSymbol).toBe("WETH");
+    expect(req.outputSymbol).toBe("USDC");
+    expect(Number(req.amount) * 4_000).toBeCloseTo(8.32, 1);
+    expect(outcome.kind).toBe("settled");
+  });
+
+  it("funds a purchase only from USDC the target calls surplus", async () => {
+    // 1000 USDC and nothing else. Target 90/10 in WETH: the surplus is 100
+    // USD even though WETH's own shortfall is also 100 USD; buy 100 USDC of it.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [wethHolding(0)]));
+    await settleRebalance(
+      TREASURY,
+      [
+        { symbol: "USDC", percentage: 90 },
+        { symbol: "WETH", percentage: 10 },
+      ],
+      book,
+    );
+    const req = getSwapQuote.mock.calls[0]![0] as { inputSymbol: string; outputSymbol: string; amount: string };
+    expect(req).toMatchObject({ inputSymbol: "USDC", outputSymbol: "WETH" });
+    expect(Number(req.amount)).toBeCloseTo(100, 2);
+  });
+
+  it("caps a purchase at the reserve surplus when several assets want funding", async () => {
+    // 1000 USDC, target 80 / 10 WETH / 10 cirBTC: surplus 200, each wants
+    // 100, so the first purchase is 100 and the other waits for the next
+    // approval rather than both drawing 200 at once.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [wethHolding(0), cirBtcHolding(0)]));
+    await settleRebalance(
+      TREASURY,
+      [
+        { symbol: "USDC", percentage: 80 },
+        { symbol: "WETH", percentage: 10 },
+        { symbol: "cirBTC", percentage: 10 },
+      ],
+      book,
+    );
+    const req = getSwapQuote.mock.calls[0]![0] as { inputSymbol: string; amount: string };
+    expect(req.inputSymbol).toBe("USDC");
+    expect(Number(req.amount)).toBeCloseTo(100, 2);
+  });
+
+  it("treats a tradable holding the targets do not name as targeted at zero", async () => {
+    // Targets name only USDC and EURC, yet 0.05 cirBTC (5000 USD) is held.
+    // That position is the largest drift in the book and is sold down first.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [cirBtcHolding(0.05)]));
+    await settleRebalance(TREASURY, TARGETS, book);
+    const req = getSwapQuote.mock.calls[0]![0] as { inputSymbol: string; outputSymbol: string; amount: string };
+    expect(req).toMatchObject({ inputSymbol: "cirBTC", outputSymbol: "USDC" });
+    expect(Number(req.amount)).toBeCloseTo(0.05, 6);
+  });
+
+  it("never routes a risk-to-risk leg directly", async () => {
+    // EURC overweight and WETH underweight with USDC on target: the engine
+    // sells EURC into USDC; it does not ask the venue for EURC to WETH.
+    readCustodyHoldings.mockResolvedValue(holdings(500, 400, [wethHolding(0)]));
+    await settleRebalance(
+      TREASURY,
+      [
+        { symbol: "USDC", percentage: 52 },
+        { symbol: "EURC", percentage: 24 },
+        { symbol: "WETH", percentage: 24 },
+      ],
+      book,
+    );
+    for (const call of getSwapQuote.mock.calls) {
+      const req = call[0] as { inputSymbol: string; outputSymbol: string };
+      expect([req.inputSymbol, req.outputSymbol]).toContain("USDC");
+    }
+  });
+
+  it("refuses before quoting when the leg's own reference price is stale", async () => {
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [wethHolding(0)]));
+    const staleEth = marketQuoteFor({ USDC: 1, EURC: 1.16, WETH: 4_000 });
+    staleEth.prices["coingecko:ethereum"]!.stale = true;
+    const outcome = await settleRebalance(
+      TREASURY,
+      [
+        { symbol: "USDC", percentage: 90 },
+        { symbol: "WETH", percentage: 10 },
+      ],
+      staleEth,
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") return;
+    expect(outcome.reason).toContain("coingecko:ethereum");
+    expect(getSwapQuote).not.toHaveBeenCalled();
+    expect(signCustodyCall).not.toHaveBeenCalled();
+  });
+
+  it("refuses to size anything while a held asset off the leg is priced stale", async () => {
+    // cirBTC is not on the leg, but it is 10% of the denominator. A stale
+    // print for it mis-sizes every leg, so the whole plan waits.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [cirBtcHolding(0.001)]));
+    const staleBtc = marketQuoteFor({ USDC: 1, EURC: 1.16, cirBTC: 100_000 });
+    staleBtc.prices["coingecko:bitcoin"]!.stale = true;
+    const outcome = await settleRebalance(TREASURY, TARGETS, staleBtc);
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") return;
+    expect(outcome.reason).toContain("cirBTC");
+    expect(outcome.reason).toContain("stale");
+    expect(getSwapQuote).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale price on a zero balance, which needs no valuing", async () => {
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [cirBtcHolding(0)]));
+    const staleBtc = marketQuoteFor({ USDC: 1, EURC: 1.16, cirBTC: 100_000 });
+    staleBtc.prices["coingecko:bitcoin"]!.stale = true;
+    const outcome = await settleRebalance(TREASURY, TARGETS, staleBtc);
+    expect(outcome.kind).toBe("settled");
+  });
+});
+
+/**
+ * A held-only position (wARS) is priced and counted but never traded, so the
+ * approved percentages have to be applied to the rest of the book. Sizing
+ * them over the whole book would chase a target that can never be reached
+ * and, worse, call the book "on target" while it still drifts.
+ */
+describe("planning around held-only positions", () => {
+  const WARS = "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D";
+  const warsHolding = (units: number) => ({
+    symbol: "wARS",
+    name: "Argentine peso sleeve",
+    decimals: 18,
+    role: "risk",
+    tradable: false,
+    address: WARS,
+    priceId: "fx:ARS",
+    units,
+    raw: (BigInt(Math.round(units * 1e6)) * 10n ** 12n).toString(),
+  });
+  // 1 wARS = 0.001 USD, so 100 000 wARS is 100 USD.
+  const book = marketQuoteFor({ USDC: 1, EURC: 1.16, wARS: 0.001 });
+
+  it("applies the approved split to the tradable book only", async () => {
+    // 1000 USDC + 100 USD of wARS. A 50/50 approval means 500 USDC of EURC,
+    // not 550 (half of the whole book) and not 450.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [warsHolding(100_000)]));
+    await settleRebalance(TREASURY, TARGETS, book);
+    const req = getSwapQuote.mock.calls[0]![0] as { inputSymbol: string; outputSymbol: string; amount: string };
+    expect(req).toMatchObject({ inputSymbol: "USDC", outputSymbol: "EURC" });
+    expect(Number(req.amount)).toBeCloseTo(500, 1);
+  });
+
+  it("drops a held-only target the approval carried and scales the rest", async () => {
+    // The engine wrote wARS 5% into the approval. It is ignored: the other
+    // two are scaled to the tradable book, 48:47, so USDC's target is
+    // 1000 * 48 / 95 = 505.26 and 494.74 USDC of EURC is bought.
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [warsHolding(100_000)]));
+    await settleRebalance(
+      TREASURY,
+      [
+        { symbol: "USDC", percentage: 48 },
+        { symbol: "EURC", percentage: 47 },
+        { symbol: "wARS", percentage: 5 },
+      ],
+      book,
+    );
+    const req = getSwapQuote.mock.calls[0]![0] as { amount: string };
+    expect(Number(req.amount)).toBeCloseTo(494.74, 1);
+  });
+
+  it("says the held-only position is why nothing moved, instead of calling the book on target", async () => {
+    // 580 USDC and 500 EURC (580 USD) are exactly 50/50; the 100 USD of
+    // wARS on top used to make USDC look 50 USD short and the plan report
+    // "already on target" with nothing done.
+    readCustodyHoldings.mockResolvedValue(holdings(580, 500, [warsHolding(100_000)]));
+    const outcome = await settleRebalance(TREASURY, TARGETS, book);
+    expect(outcome.kind).toBe("nothing-to-do");
+    if (outcome.kind !== "nothing-to-do") return;
+    expect(outcome.reason).toContain("wARS");
+    expect(getSwapQuote).not.toHaveBeenCalled();
+  });
+
+  it("refuses to size while the held-only position's own price is stale", async () => {
+    readCustodyHoldings.mockResolvedValue(holdings(1000, 0, [warsHolding(100_000)]));
+    const staleArs = marketQuoteFor({ USDC: 1, EURC: 1.16, wARS: 0.001 });
+    staleArs.prices["fx:ARS"]!.stale = true;
+    const outcome = await settleRebalance(TREASURY, TARGETS, staleArs);
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") return;
+    expect(outcome.reason).toContain("wARS");
+    expect(getSwapQuote).not.toHaveBeenCalled();
+  });
+
+  it("has nothing to do when the wallet holds only what Revo never trades", async () => {
+    readCustodyHoldings.mockResolvedValue(holdings(0, 0, [warsHolding(100_000)]));
+    const outcome = await settleRebalance(TREASURY, TARGETS, book);
+    expect(outcome.kind).toBe("nothing-to-do");
+    if (outcome.kind !== "nothing-to-do") return;
+    expect(outcome.reason).toContain("wARS");
+  });
+});
+
 describe("readFillFromReceipt", () => {
   const TX = `0x${"ab".repeat(32)}` as `0x${string}`;
 

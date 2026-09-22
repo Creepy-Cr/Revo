@@ -2,11 +2,13 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { parseAbi, type Address, type PublicClient } from "viem";
 import { auditEventsTable, db } from "@workspace/db";
 import { arcPublicClient, ChainError, type CustodyTransaction } from "./arc-chain";
+import { tokenByAddress, type IssuerControl } from "./arc-tokens";
 import { logger } from "./logger";
 
 const issuerAbi = parseAbi([
   "function paused() view returns (bool)",
   "function isBlacklisted(address account) view returns (bool)",
+  "function isBlocked(address account) view returns (bool)",
 ]);
 
 /**
@@ -40,9 +42,13 @@ export interface IssuerStatus {
 }
 
 /**
- * Reads Circle's controls afresh. No issuer decision is cached, and a read
+ * Reads the issuer's controls afresh. No issuer decision is cached, and a read
  * that fails is reported as an RPC failure rather than as an answer: an
  * unreachable node never counts as "allowed" and never counts as "blocked".
+ *
+ * Only the controls the registry says this contract exposes are probed. A
+ * token Revo has not pinned has no known controls and is refused outright,
+ * because "we did not check" must never read as "the issuer allows it".
  */
 export async function isBlockedByIssuer(
   token: Address,
@@ -50,29 +56,37 @@ export async function isBlockedByIssuer(
   destination?: Address,
   client: PublicClient = arcPublicClient(),
 ): Promise<IssuerStatus> {
+  const pinned = tokenByAddress(token);
+  if (!pinned) {
+    throw new ChainError(
+      "REFUSED_BY_POLICY",
+      `${token} is not a token Revo has pinned on Arc, so its issuer controls are unknown and nothing was signed.`,
+    );
+  }
+  const controls = new Set<IssuerControl>(pinned.issuerControls);
+  const blocklist = controls.has("isBlacklisted")
+    ? "isBlacklisted"
+    : controls.has("isBlocked")
+      ? "isBlocked"
+      : null;
+  const readBlocked = async (account: Address): Promise<boolean> =>
+    blocklist === null
+      ? false
+      : ((await client.readContract({
+          address: token,
+          abi: issuerAbi,
+          functionName: blocklist,
+          args: [account],
+        })) as boolean);
   try {
     const [tokenPaused, walletBlacklisted, destinationBlacklisted] = await Promise.all([
-      client.readContract({ address: token, abi: issuerAbi, functionName: "paused" }),
-      client.readContract({
-        address: token,
-        abi: issuerAbi,
-        functionName: "isBlacklisted",
-        args: [wallet],
-      }),
-      destination
-        ? client.readContract({
-            address: token,
-            abi: issuerAbi,
-            functionName: "isBlacklisted",
-            args: [destination],
-          })
+      controls.has("paused")
+        ? (client.readContract({ address: token, abi: issuerAbi, functionName: "paused" }) as Promise<boolean>)
         : Promise.resolve(false),
+      readBlocked(wallet),
+      destination ? readBlocked(destination) : Promise.resolve(false),
     ]);
-    return {
-      tokenPaused: tokenPaused as boolean,
-      walletBlacklisted: walletBlacklisted as boolean,
-      destinationBlacklisted: destinationBlacklisted as boolean,
-    };
+    return { tokenPaused, walletBlacklisted, destinationBlacklisted };
   } catch (error) {
     const detail = error instanceof Error ? error.message.slice(0, 300) : String(error);
     throw new ChainError(
@@ -105,18 +119,55 @@ export async function assertIssuerAllows(
   }
 }
 
-export function assertFreshMarketQuote(quote: { stale: boolean; fetchedAt: number } | null): void {
+interface Freshness {
+  stale: boolean;
+  fetchedAt: number;
+}
+
+/** True when a reference price is fresh enough to size or check a trade against. */
+export function isCurrentReference(entry: Freshness | null | undefined): boolean {
+  return entry !== null && entry !== undefined && !entry.stale && Date.now() - entry.fetchedAt <= MAX_MARKET_QUOTE_AGE_MS;
+}
+
+/**
+ * Refuses unless the quote as a whole is current. When `priceIds` are given
+ * the check is applied to each of those reference prices individually
+ * instead, so one feed being down only stops the trades that need it.
+ */
+export function assertFreshMarketQuote(
+  quote: (Freshness & { prices?: Record<string, Freshness | undefined> }) | null,
+  priceIds?: ReadonlyArray<string>,
+): void {
   if (!quote) {
     throw new ChainError(
       "REFUSED_BY_POLICY",
       "A current independent market price is required before a rebalance can be signed.",
     );
   }
-  if (quote.stale || Date.now() - quote.fetchedAt > MAX_MARKET_QUOTE_AGE_MS) {
-    throw new ChainError(
-      "REFUSED_BY_POLICY",
-      "The independent market price is stale or more than 10 minutes old, so the rebalance was not signed.",
-    );
+  const isCurrent = isCurrentReference;
+  if (!priceIds) {
+    if (!isCurrent(quote)) {
+      throw new ChainError(
+        "REFUSED_BY_POLICY",
+        "The independent market price is stale or more than 10 minutes old, so the rebalance was not signed.",
+      );
+    }
+    return;
+  }
+  for (const id of priceIds) {
+    const entry = quote.prices?.[id];
+    if (!entry) {
+      throw new ChainError(
+        "REFUSED_BY_POLICY",
+        `No independent market price is available for ${id}, so the rebalance was not signed.`,
+      );
+    }
+    if (!isCurrent(entry)) {
+      throw new ChainError(
+        "REFUSED_BY_POLICY",
+        `The independent market price for ${id} is stale or more than 10 minutes old, so the rebalance was not signed.`,
+      );
+    }
   }
 }
 

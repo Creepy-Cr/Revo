@@ -5,7 +5,7 @@ import { encodeFunctionData, parseAbi, type Address, type PublicClient } from "v
 import { auditEventsTable, db } from "@workspace/db";
 import { recordAudit } from "./audit";
 import { ARC_TOKENS } from "./arc-tokens";
-import { PERMIT2, UNIVERSAL_ROUTER } from "./uniswap-v4";
+import { PERMIT2, UNIVERSAL_ROUTER, ZERO_ADDRESS, encodeV4Swap } from "./v4-calldata";
 import { assertCustodyCallAllowed, ChainError } from "./arc-chain";
 import {
   MAX_MARKET_QUOTE_AGE_MS,
@@ -44,17 +44,52 @@ describe("custody signer allowlist", () => {
     functionName: "approve",
     args: [ARC_TOKENS.USDC.address, UNIVERSAL_ROUTER, 1n, 1],
   });
-  const execute = encodeFunctionData({
+  const emptyExecute = encodeFunctionData({
     abi: routerAbi,
     functionName: "execute",
     args: ["0x", [], 1n],
+  });
+  const eurcForUsdc = encodeV4Swap({
+    key: {
+      currency0: ARC_TOKENS.USDC.address,
+      currency1: ARC_TOKENS.EURC.address,
+      fee: 500,
+      tickSpacing: 10,
+      hooks: ZERO_ADDRESS,
+    },
+    input: ARC_TOKENS.EURC.address,
+    output: ARC_TOKENS.USDC.address,
+    amountIn: 1_000_000n,
+    minOut: 1_100_000n,
+    deadline: 1n,
   });
 
   it("accepts each legal target and selector pair", () => {
     expect(() => assertCustodyCallAllowed(ARC_TOKENS.USDC.address, transfer)).not.toThrow();
     expect(() => assertCustodyCallAllowed(ARC_TOKENS.EURC.address, tokenApprove)).not.toThrow();
     expect(() => assertCustodyCallAllowed(PERMIT2, permitApprove)).not.toThrow();
-    expect(() => assertCustodyCallAllowed(UNIVERSAL_ROUTER, execute)).not.toThrow();
+    expect(() => assertCustodyCallAllowed(UNIVERSAL_ROUTER, eurcForUsdc)).not.toThrow();
+  });
+
+  it("refuses router calldata that is not one pinned swap, whatever the selector", () => {
+    // The selector alone used to be enough. An empty command list is a legal
+    // execute() call and does nothing, and it must still be refused: the
+    // signer only signs the one payload shape it can prove.
+    expect(() => assertCustodyCallAllowed(UNIVERSAL_ROUTER, emptyExecute)).toThrow(/single V4_SWAP/);
+  });
+
+  it("never approves a held-only token for spending, on the token or through Permit2", () => {
+    const wars = ARC_TOKENS.wARS;
+    expect(wars.tradable).toBe(false);
+    expect(() => assertCustodyCallAllowed(wars.address, tokenApprove)).toThrow(/never traded/);
+    const permitWars = encodeFunctionData({
+      abi: permit2Abi,
+      functionName: "approve",
+      args: [wars.address, UNIVERSAL_ROUTER, 1n, 1],
+    });
+    expect(() => assertCustodyCallAllowed(PERMIT2, permitWars)).toThrow(/never traded/);
+    // Transfers stay open so the position can always be withdrawn.
+    expect(() => assertCustodyCallAllowed(wars.address, transfer)).not.toThrow();
   });
 
   it("rejects foreign targets, selectors, value, and approval spenders", () => {
@@ -132,6 +167,58 @@ describe("custody market and issuer policy", () => {
       destinationBlacklisted: false,
     });
     expect(readContract).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("issuer controls follow the registry", () => {
+  it("probes only the controls the contract exposes, and none for a token with none", async () => {
+    // wARS blocks through isBlocked, not isBlacklisted; syrupUSDC exposes
+    // neither a pause nor a blocklist, so nothing is called at all.
+    const wars = vi.fn(async (req: { functionName: string }) => req.functionName === "isBlocked");
+    const status = await isBlockedByIssuer(ARC_TOKENS.wARS.address, DESTINATION, UNIVERSAL_ROUTER, {
+      readContract: wars,
+    } as unknown as PublicClient);
+    expect(status).toEqual({ tokenPaused: false, walletBlacklisted: true, destinationBlacklisted: true });
+    expect(wars.mock.calls.map((c) => (c[0] as { functionName: string }).functionName).sort()).toEqual([
+      "isBlocked",
+      "isBlocked",
+      "paused",
+    ]);
+
+    const syrup = vi.fn();
+    const clear = await isBlockedByIssuer(ARC_TOKENS.syrupUSDC.address, DESTINATION, UNIVERSAL_ROUTER, {
+      readContract: syrup,
+    } as unknown as PublicClient);
+    expect(clear).toEqual({ tokenPaused: false, walletBlacklisted: false, destinationBlacklisted: false });
+    expect(syrup).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token that is not pinned rather than guessing its controls", async () => {
+    const readContract = vi.fn();
+    await expect(
+      isBlockedByIssuer("0x000000000000000000000000000000000000dead", DESTINATION, undefined, {
+        readContract,
+      } as unknown as PublicClient),
+    ).rejects.toMatchObject({ name: "ChainError", code: "REFUSED_BY_POLICY" });
+    expect(readContract).not.toHaveBeenCalled();
+  });
+
+  it("checks freshness per reference price when the leg's price ids are given", () => {
+    const fresh = { stale: false, fetchedAt: Date.now() };
+    const quote = {
+      ...fresh,
+      stale: true,
+      prices: {
+        "coingecko:usd-coin": fresh,
+        "fx:ARS": { stale: true, fetchedAt: Date.now() },
+      },
+    };
+    // The whole feed is flagged stale because the FX leg is, but a trade
+    // that only depends on the anchor is still allowed to proceed.
+    expect(() => assertFreshMarketQuote(quote)).toThrow(/stale/);
+    expect(() => assertFreshMarketQuote(quote, ["coingecko:usd-coin"])).not.toThrow();
+    expect(() => assertFreshMarketQuote(quote, ["coingecko:usd-coin", "fx:ARS"])).toThrow(/fx:ARS/);
+    expect(() => assertFreshMarketQuote(quote, ["coingecko:bitcoin"])).toThrow(/No independent market price/);
   });
 });
 
