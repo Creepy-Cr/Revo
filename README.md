@@ -108,6 +108,28 @@ Useful Arc links: [Arc docs](https://docs.arc.network) ·
 [Circle Gateway](https://developers.circle.com/gateway) ·
 [Circle developer docs](https://developers.circle.com)
 
+### Proof of mainnet execution
+
+Everything below is public and can be checked on [arc-scan.org](https://arc-scan.org) or over
+any Arc mainnet RPC. On 22 September 2026 the product's own proposal path (approve, size from
+live balances, quote the pool, check the independent price, simulate, sign, confirm, reconcile)
+executed one buy and one sell-back through each pinned pool from a treasury holding about
+3 USDC. Every fill landed at quote and the whole round trip cost about 0.07 USDC in gas.
+
+Custody wallet (the `from` address on every transaction):
+[`0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0`](https://arc-scan.org/address/0x2BD4A80730b8cA21D1d523564C58D1B048583Ac0)
+
+| Pool | Buy | Sell back |
+| --- | --- | --- |
+| EURC/USDC | [`0xd31f6ae3`](https://arc-scan.org/tx/0xd31f6ae3dac37e88aae4e153d7ba6f70ec426998da08a80d9edee885623319aa) | [`0xb12bc4a7`](https://arc-scan.org/tx/0xb12bc4a79d88f0688b052e3f72efee151b36735d3d81af690b7cfe209345448b) |
+| syrupUSDC/USDC | [`0xe4409f4b`](https://arc-scan.org/tx/0xe4409f4b7f76d57ddd30544aeb15373a3d0240c8e97c0160ad59acb5dff7489f) | [`0x8d2cddbb`](https://arc-scan.org/tx/0x8d2cddbb7ebfb7e9d593c88471e78c8fd708b21f2dfd195d608c819186997d06) |
+| cirBTC/USDC | [`0x4aedd907`](https://arc-scan.org/tx/0x4aedd907a11261240a08720094acb2124d3a364290af94e4423c28bbc69cf8d8) | [`0x5e784552`](https://arc-scan.org/tx/0x5e784552cc9778326ff5fab7a4e61d4a8b1ecc260e794d482c9152c1fc5a0af9) |
+| WETH/USDC | [`0xd77b2884`](https://arc-scan.org/tx/0xd77b28849cb74226e4617a52e005f9ab807f04a459a289adb85152c1602f6d5b) | [`0x82ebf6a9`](https://arc-scan.org/tx/0x82ebf6a9338ecdc7ea49495fc1ed39170bb2172b87f2db019a937105726a8323) |
+
+Each transaction is a Uniswap v4 swap through the UniversalRouter listed above, paid for in
+USDC, with the swap's transfer logs used to measure the realised fill. Nothing here is a
+simulation: the only simulated feature in Revo is the risk drill, and it says so on screen.
+
 ## Architecture
 
 <p align="center">
