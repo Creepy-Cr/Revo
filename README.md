@@ -340,6 +340,80 @@ and the dashboard and proposal routes. Route and worker tests run against a real
 database and stub the chain, so `DATABASE_URL` must point at a database you are happy to write
 to. CI runs the pure unit suites on every push and pull request.
 
+## Deploy the website to Vercel
+
+The repository-root `vercel.mjs` builds **only the static web app** from
+`artifacts/revo-treasury`. Import this repository into Vercel with **Root
+Directory = repository root (`.`)**; leave the build and output settings on
+their repository defaults so `vercel.mjs` supplies them. The configuration
+installs dependencies with pnpm, builds the prerendered public pages and
+client-only console, and maps `/docs`, `/privacy`, `/terms`, `/risk`, `/app`
+and `/dashboard` (including trailing slashes) to the right HTML files.
+No `PORT` or `BASE_PATH` build variables are needed. The two video artifacts
+are not included in this website deployment.
+
+For a **functional console**, run the existing Express API and its durable
+worker on a persistent Node host with PostgreSQL. Do **not** deploy
+`artifacts/api-server/src/index.ts` as a Vercel Function: the 15-second worker,
+leases, on-chain reconciliation and in-flight settlement require a continuously
+running process. Set `REVO_API_ORIGIN` in the Vercel project's environment to
+the backend's **HTTPS origin only**, such as `https://api.example.com` (no
+`/api` suffix). At build time the Vercel config then rewrites `/api/*` to that
+backend, keeping browser requests and the HttpOnly session cookie same-origin.
+Without `REVO_API_ORIGIN`, the website and console shell deploy, but `/api/*`
+does not exist and wallet sign-in and live data will not work.
+
+On the API host set `APP_ORIGINS` to the exact Vercel frontend origin(s);
+the **first** entry is embedded in the wallet sign-in message. Also configure
+the backend's `DATABASE_URL`, dedicated `CUSTODY_MASTER_SECRET`, and
+`AI_INTEGRATIONS_ANTHROPIC_*` values as described below. Verify the backend
+health endpoint and wallet sign-in on the intended domain **before** enabling
+any live treasury operation. Vercel preview deployments use changing hostnames;
+add their exact origins to `APP_ORIGINS` if sign-in is needed there. Never place
+custody or AI secrets in `VITE_*` variables or in the Vercel frontend project.
+
+### Run the API and worker on Railway
+
+The repository-root `railway.json` builds the API from the pnpm workspace and
+starts `artifacts/api-server/src/index.ts` as **one persistent service**. The
+same process starts the 15-second worker automatically; do not create a second
+worker service or a Railway cron job.
+
+1. Connect the repository to a Railway service. Keep **Root Directory** at the
+   repository root (`/`) so pnpm can install workspace dependencies and find
+   `railway.json`. Use the config file's Railpack build/start commands; Railway
+   supplies `PORT`. Leave **Serverless** (app sleeping) disabled and initially
+   run **one replica**. Give the service a public HTTPS domain for the Vercel
+   `/api` rewrite.
+2. Provision PostgreSQL separately (a Railway Postgres service or an existing
+   managed database). Set the API service's `DATABASE_URL` to that database's
+   connection string in Railway variables. Check the target and take a backup
+   before applying the schema. Review and run `pnpm --filter @workspace/db push`
+   **manually against that database before starting the API**. `railway.json`
+   deliberately does not run schema pushes on every deploy.
+3. In the Railway API service variables, set `CUSTODY_MASTER_SECRET` (a stable,
+   dedicated production secret of at least 16 characters), `APP_ORIGINS`
+   (comma-separated exact frontend origins, with the primary production URL
+   first), `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, and
+   `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`. The start command forces
+   `NODE_ENV=production`; `SESSION_SECRET` is **not** a production custody
+   fallback. If migrating existing sealed treasury keys, preserve the original
+   custody master secret or those keys cannot be opened. Optional values
+   including `ARC_RPC_URLS` and `ALERT_WEBHOOK_URL` are described in the table
+   below.
+4. Check `https://<railway-api-domain>/api/healthz`. It returns 503 when
+   required database, Arc RPC, or swap venue checks fail, so Railway will not
+   mark an unhealthy deployment as ready. It can report `degraded` with HTTP
+   200 for optional feeds. Then set `REVO_API_ORIGIN` in Vercel to that HTTPS
+   origin **without `/api`**, redeploy the website, and verify same-origin
+   `/api/healthz` and wallet sign-in. Do not test deposits, withdrawals, or
+   swaps with real funds merely to validate deployment.
+
+The worker starts as soon as the API listens, including before Railway's health
+check passes. Configure and verify the intended database, environment, and Arc
+mainnet custody controls **before the first production start**. No private keys
+or database URLs belong in Git, Vercel's public frontend variables, or chat.
+
 ## Deployment
 
 <p align="center">

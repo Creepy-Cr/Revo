@@ -5,35 +5,27 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
-}
-
 // Optional, local development only. When the API runs on another port, set
 // API_PROXY_TARGET (for example http://localhost:8080) and the dev server
 // forwards /api there so the browser stays same-origin and the session cookie
 // works. Replit's router does this itself, so the variable is unset there.
 const apiProxyTarget = process.env.API_PROXY_TARGET;
 
-export default defineConfig({
+export default defineConfig(async ({ command }) => {
+  const rawPort = process.env.PORT;
+  if (command === 'serve' && !rawPort) {
+    throw new Error('PORT environment variable is required for the dev server.');
+  }
+  const port = Number(rawPort ?? 5173);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid PORT value: "${rawPort}"`);
+  }
+  const basePath = process.env.BASE_PATH ?? (command === 'build' ? '/' : undefined);
+  if (!basePath) {
+    throw new Error('BASE_PATH environment variable is required for the dev server.');
+  }
+
+  return {
   base: basePath,
   plugins: [
     react(),
@@ -87,4 +79,5 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
   },
+  };
 });
