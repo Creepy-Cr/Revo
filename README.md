@@ -374,23 +374,29 @@ custody or AI secrets in `VITE_*` variables or in the Vercel frontend project.
 
 ### Run the API and worker on Railway
 
-The repository-root `railway.json` builds the API from the pnpm workspace and
-starts `artifacts/api-server/src/index.ts` as **one persistent service**. The
-same process starts the 15-second worker automatically; do not create a second
-worker service or a Railway cron job.
+Deploy the API and worker as **one persistent service**. The API's production
+start script starts the 15-second worker automatically; do not create a second
+worker service or a Railway cron job. Railway's legacy `railway.json` Config as
+Code is not available for new services, so set the service options in Railway
+(or manage them with Railway's current Infrastructure as Code workflow).
 
 1. Connect the repository to a Railway service. Keep **Root Directory** at the
-   repository root (`/`) so pnpm can install workspace dependencies and find
-   `railway.json`. Use the config file's Railpack build/start commands; Railway
-   supplies `PORT`. Leave **Serverless** (app sleeping) disabled and initially
-   run **one replica**. Give the service a public HTTPS domain for the Vercel
-   `/api` rewrite.
+   repository root (`/`) so pnpm can install workspace dependencies. Select
+   Railpack; set **Build Command** to
+   `pnpm --filter @workspace/api-server run build` and **Start Command** to
+   `NODE_ENV=production pnpm --filter @workspace/api-server run start`.
+   Railway supplies `PORT`. Leave **Serverless** (app sleeping) disabled,
+   leave the cron schedule empty, and initially run **one replica**. Set
+   **Healthcheck Path** to `/api/healthz`, **Healthcheck Timeout** to 300
+   seconds, and **Restart Policy** to Always. Give the service a public HTTPS
+   domain for the Vercel `/api` rewrite.
 2. Provision PostgreSQL separately (a Railway Postgres service or an existing
-   managed database). Set the API service's `DATABASE_URL` to that database's
-   connection string in Railway variables. Check the target and take a backup
-   before applying the schema. Review and run `pnpm --filter @workspace/db push`
-   **manually against that database before starting the API**. `railway.json`
-   deliberately does not run schema pushes on every deploy.
+   managed database, such as Supabase). Set the API service's `DATABASE_URL`
+   to its **PostgreSQL connection string**, not a Supabase Data API URL or
+   publishable key, in Railway variables. Check the target and take a backup
+   before applying the schema. Review and run
+   `pnpm --filter @workspace/db push` **manually against that database before
+   starting the API**; never push schema on every deploy.
 3. In the Railway API service variables, set `CUSTODY_MASTER_SECRET` (a stable,
    dedicated production secret of at least 16 characters), `APP_ORIGINS`
    (comma-separated exact frontend origins, with the primary production URL
