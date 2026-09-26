@@ -40,6 +40,7 @@ function redact(value: unknown): unknown {
 async function deliverWebhook(
   url: string,
   payload: Record<string, unknown>,
+  discord = false,
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -49,10 +50,30 @@ async function deliverWebhook(
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(5_000),
       });
-      if (response.ok) return true;
-      if (response.status < 500 || attempt === 2) {
+      if (response.ok) {
+        if (!discord) return true;
+        // With wait=true Discord confirms the message was saved.
+        // Do not retry an accepted request if its response cannot be parsed.
+        let message: { id?: unknown } | null = null;
+        try {
+          message = await response.json() as { id?: unknown };
+        } catch {
+          // Discord may have saved the alert.
+        }
+        if (typeof message?.id === "string" && message.id.length > 0) return true;
+        logger.warn("Discord accepted the alert but did not confirm a saved message");
+        return false;
+      }
+      if ((response.status !== 429 && response.status < 500) || attempt === 2) {
         logger.warn({ status: response.status, attempt: attempt + 1 }, "Alert webhook rejected delivery");
         return false;
+      }
+      if (response.status === 429) {
+        const retryAfter = Number(response.headers.get("retry-after"));
+        if (Number.isFinite(retryAfter) && retryAfter > 0) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter * 1000, 5_000)));
+          continue;
+        }
       }
     } catch (error) {
       if (attempt === 2) {
@@ -63,6 +84,25 @@ async function deliverWebhook(
     await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
   }
   return false;
+}
+
+function discordWebhook(url: URL): boolean {
+  return ["discord.com", "discordapp.com"].includes(url.hostname.toLowerCase()) &&
+    /^\/api(?:\/v\d+)?\/webhooks\/\d+\/[^/]+\/?$/.test(url.pathname);
+}
+
+function discordPayload(body: Record<string, unknown>): Record<string, unknown> {
+  const content = [
+    `**Revo ${String(body.severity).toUpperCase()}: ${String(body.title)}**`,
+    String(body.detail),
+    `Type: ${String(body.kind)}`,
+    `Treasury: ${String(body.treasuryId ?? "platform")}`,
+    `Time: ${String(body.createdAt)}`,
+  ].join("\n");
+  return {
+    content: content.length > 1900 ? `${content.slice(0, 1899)}…` : content,
+    allowed_mentions: { parse: [] },
+  };
 }
 
 /**
@@ -102,11 +142,18 @@ export async function raiseAlert(input: AlertInput): Promise<void> {
       createdAt: createdAt.toISOString(),
       source: "revo-treasury",
     };
-    if (new URL(url).hostname.toLowerCase() === "hooks.slack.com") {
+    const destination = new URL(url);
+    if (destination.hostname.toLowerCase() === "hooks.slack.com") {
       body.text = `${input.severity.toUpperCase()}: ${input.title} - ${input.detail}`.replace(/\s+/g, " ");
       body.text = redact(body.text);
     }
-    if (await deliverWebhook(url, body)) {
+    const isDiscord = discordWebhook(destination);
+    if (isDiscord) destination.searchParams.set("wait", "true");
+    if (await deliverWebhook(
+      isDiscord ? destination.toString() : url,
+      isDiscord ? discordPayload(body) : body,
+      isDiscord,
+    )) {
       await db
         .update(alertsTable)
         .set({ deliveredAt: new Date() })

@@ -303,7 +303,7 @@ its own treasury provisioned on the spot and becomes its admin.
 | `OPENAI_POLICY_MODEL`, `OPENAI_CHAT_MODEL` | no | Optional OpenAI model overrides; both default to `gpt-5.6-terra` |
 | `WORKER_ENABLED` | no | Worker runs by default in production and stays off in development; set `false` for a production pause or `true` to opt in during development |
 | `ARC_RPC_URLS` | no | Comma-separated Arc mainnet RPC override list; otherwise the built-in public providers use automatic failover |
-| `ALERT_WEBHOOK_URL` | no | POST target for critical alerts; Slack incoming webhooks are supported |
+| `ALERT_WEBHOOK_URL` | no | POST target for operator alerts; Slack and private-channel Discord incoming webhooks are supported. Treat the URL as a secret |
 | `REBALANCE_MAX_USD_PER_TRADE` | no | Absolute rebalance cap per trade, defaults to `25000` |
 | `REBALANCE_MAX_USD_PER_DAY` | no | Absolute rebalance cap per rolling day, defaults to `100000` |
 | `APP_ORIGINS` | production | Comma-separated browser origins allowed to call the API |

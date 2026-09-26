@@ -66,6 +66,49 @@ describe("alert webhook delivery", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("sends a redacted Discord message without mentions and confirms delivery", async () => {
+    process.env.ALERT_WEBHOOK_URL = "https://discord.com/api/webhooks/123/test-token";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"id":"discord-message-1"}', { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await raiseAlert({
+      ...input,
+      title: "Alert @everyone",
+      detail: `Warning <@123> 0x${"a".repeat(64)}`,
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, options] = fetchMock.mock.calls[0]!;
+    expect(new URL(url).searchParams.get("wait")).toBe("true");
+    const payload = JSON.parse(options.body as string);
+    expect(payload.allowed_mentions).toEqual({ parse: [] });
+    expect(payload.content).toContain("Revo CRITICAL: Alert @everyone");
+    expect(payload.content).toContain("[REDACTED]");
+    expect(payload.content).not.toContain(`0x${"a".repeat(64)}`);
+    expect(payload).not.toHaveProperty("data");
+    const [saved] = await db.select().from(alertsTable).where(eq(alertsTable.treasuryId, treasuryId));
+    expect(saved?.deliveredAt).toBeTruthy();
+  });
+
+  it("retries a Discord rate limit and does not mark an unconfirmed message delivered", async () => {
+    process.env.ALERT_WEBHOOK_URL = "https://discord.com/api/webhooks/123/test-token";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response('{"id":"discord-message-1"}', { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await raiseAlert(input);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await raiseAlert(input);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const rows = await db.select().from(alertsTable).where(eq(alertsTable.treasuryId, treasuryId));
+    expect(rows.filter((row) => row.deliveredAt === null)).toHaveLength(1);
+  });
+
   it("gives up after retries without throwing", async () => {
     process.env.ALERT_WEBHOOK_URL = "https://alerts.example.test/hook";
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
