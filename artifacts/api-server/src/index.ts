@@ -27,7 +27,16 @@ const server = app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  startWorker();
+  // Preview sessions must not reconcile real funds by accident. Railway
+  // production runs the worker by default, with an explicit kill switch.
+  if (
+    process.env.WORKER_ENABLED === "true" ||
+    (process.env.NODE_ENV === "production" && process.env.WORKER_ENABLED !== "false")
+  ) {
+    startWorker();
+  } else {
+    logger.info("Background worker disabled");
+  }
 });
 
 // Graceful shutdown: stop accepting connections, drain the DB pool, then

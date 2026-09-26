@@ -31,7 +31,7 @@ import {
   type PolicyRules,
   type TreasuryProposal,
 } from "@workspace/db";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { openai } from "../lib/openai-client";
 import {
   applyDrillToDashboard,
   drillProposal,
@@ -57,9 +57,9 @@ const router: IRouter = Router();
 /** The agent's identity - one name, used consistently across API and UI. */
 const AGENT_NAME = "Arcus";
 /** Reserve maximum reasoning quality for structured policy compilation. */
-const POLICY_COMPILER_MODEL = "claude-opus-5";
+const POLICY_COMPILER_MODEL = process.env.OPENAI_POLICY_MODEL?.trim() || "gpt-5.6-terra";
 /** Interactive explanations prioritize low latency while retaining strong reasoning. */
-const ARCUS_CHAT_MODEL = "claude-sonnet-5";
+const ARCUS_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-5.6-terra";
 
 /**
  * Statuses an operator may still approve or reject. "approved" is absent on
@@ -109,7 +109,7 @@ function policyCompilerSystemPrompt(): string {
 }
 
 /**
- * Claude is instructed to return bare JSON, but defensively strip a markdown
+ * The model is instructed to return bare JSON, but defensively strip a markdown
  * code fence if one slips through so JSON.parse never sees it.
  */
 function stripJsonFences(raw: string): string {
@@ -122,11 +122,9 @@ function stripJsonFences(raw: string): string {
 }
 
 /**
- * Map stored chat history plus the current question into Anthropic message
- * turns. The messages API requires strictly alternating turns starting with
- * the user, so this drops leading agent turns left over by history retention
- * and coalesces adjacent same-role turns (a failed ask can persist a question
- * without an answer; concurrent asks can interleave).
+ * Map stored chat history plus the current question into OpenAI message turns.
+ * Drop leading agent turns left over by history retention and coalesce adjacent
+ * same-role turns (a failed ask can persist a question without an answer).
  */
 function toAgentTurns(
   history: Array<{ role: string; content: string }>,
@@ -353,19 +351,21 @@ router.post("/treasury/command", requireOperator(["strategist"]), commandGuard, 
     // The LLM runs exactly ONCE per instruction: it compiles the natural
     // language into structured rules. Everything after approval is enforced
     // by the deterministic policy engine, never by reinterpreting the text.
-    const completion = await anthropic.messages.create(
+    const completion = await openai.chat.completions.create(
       {
         model: POLICY_COMPILER_MODEL,
-        max_tokens: 8192,
-        system: policyCompilerSystemPrompt(),
-        messages: [{ role: "user", content: parsed.data.command }],
+        max_completion_tokens: 8192,
+        messages: [
+          { role: "system", content: policyCompilerSystemPrompt() },
+          { role: "user", content: parsed.data.command },
+        ],
       },
       // Bound the upstream spend: one attempt, hard 60s cap.
       { timeout: 60_000, maxRetries: 0 },
     );
 
-    const textBlock = completion.content.find((b) => b.type === "text");
-    const content = textBlock?.type === "text" ? stripJsonFences(textBlock.text) : undefined;
+    const responseText = completion.choices[0]?.message?.content;
+    const content = responseText ? stripJsonFences(responseText) : undefined;
     if (!content) {
       throw new Error("The policy compiler returned an empty response");
     }
@@ -557,11 +557,13 @@ router.post("/treasury/agent/ask", requireOperator(["viewer", "strategist", "app
     };
 
     const generationStartedAt = Date.now();
-    const completion = await anthropic.messages.create(
+    const completion = await openai.chat.completions.create(
       {
         model: ARCUS_CHAT_MODEL,
-        max_tokens: 8192,
-        system: `You are ${AGENT_NAME}, the treasury agent of Revo Treasury, a DAO treasury holding real funds on Arc mainnet. ${assetSetSentence()} Its only execution venue is Uniswap v4, and every trade has USDC on one side. Deposits, withdrawals, and approved rebalances move real funds. You propose actions, while deterministic policy checks and required approvals gate execution.
+        max_completion_tokens: 8192,
+        messages: [{
+          role: "system",
+          content: `You are ${AGENT_NAME}, the treasury agent of Revo Treasury, a DAO treasury holding real funds on Arc mainnet. ${assetSetSentence()} Its only execution venue is Uniswap v4, and every trade has USDC on one side. Deposits, withdrawals, and approved rebalances move real funds. You propose actions, while deterministic policy checks and required approvals gate execution.
 
 You are answering an operator's question about your recent decisions. A JSON snapshot of the live treasury state follows. It is the ONLY source of truth:
 - Ground every claim in specific numbers, signals, proposals, policies, or activity entries from the snapshot. Signals carry per-source component scores (-100..+100 signed, with weights) that compose into the 0-100 composite. Use them to explain WHY a signal reads the way it does.
@@ -573,19 +575,16 @@ You are answering an operator's question about your recent decisions. A JSON sna
 
 TREASURY SNAPSHOT:
 ${JSON.stringify(context)}`,
-        // Prior conversation turns plus the current question, normalized to
-        // the strictly alternating turn order the messages API requires, so
-        // follow-up questions ("why?", "and what about ETH?") resolve against
-        // what was already discussed.
-        messages: toAgentTurns(history, parsed.data.question),
+        },
+        ...toAgentTurns(history, parsed.data.question),
+        ],
       },
       // Bound the upstream spend: one attempt, hard 60s cap.
       { timeout: 60_000, maxRetries: 0 },
     );
     const generationMs = Date.now() - generationStartedAt;
 
-    const answerBlock = completion.content.find((b) => b.type === "text");
-    const answer = answerBlock?.type === "text" ? answerBlock.text.trim() : undefined;
+    const answer = completion.choices[0]?.message?.content?.trim();
     if (!answer) {
       throw new Error("The agent returned an empty answer");
     }
@@ -594,8 +593,8 @@ ${JSON.stringify(context)}`,
       {
         model: ARCUS_CHAT_MODEL,
         generationMs,
-        inputTokens: completion.usage.input_tokens,
-        outputTokens: completion.usage.output_tokens,
+        inputTokens: completion.usage?.prompt_tokens,
+        outputTokens: completion.usage?.completion_tokens,
       },
       "Generated Arcus answer",
     );

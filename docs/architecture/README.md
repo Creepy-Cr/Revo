@@ -185,7 +185,7 @@ Solid edges are real transactions or decision paths. Dashed edges are read-only 
 | `lib/api-zod` | Zod schemas generated from the contract |
 | `lib/api-client-react` | React Query client generated from the contract |
 | `lib/db` | Drizzle schema and PostgreSQL connection |
-| `lib/integrations-anthropic-ai` | Anthropic client used by Arcus |
+| `lib/integrations-anthropic-ai` | Legacy package, no longer used by Arcus |
 
 The browser and API communicate over relative `/api` URLs, so one build works in development
 and production. In production the router sends `/api` to the API process (health check at
@@ -199,5 +199,5 @@ and production. In production the router sends `/api` to the API process (health
 | Uniswap v4 on Arc | Rebalance quotes, transaction preflight and swaps | Swap venue reported as unavailable; proposals wait |
 | Tower Exchange public API | Token registry cross-check when `TOWER_API_KEY` is set | Optional; validation degrades, trades are unaffected |
 | Circle Gateway via App Kit | Unified balance read | Panel shows unreachable, never an empty balance |
-| Anthropic API | Arcus compilation and Q and A | Commands fail loudly; nothing is executed without a compiled policy |
+| OpenAI API | Arcus compilation and Q and A | Commands fail loudly; nothing is executed without a compiled policy |
 | CoinGecko, GitHub, RSS, X, Discord | Signals | Each signal reports its own freshness; missing sources lower confidence rather than invent data |

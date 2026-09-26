@@ -52,8 +52,9 @@ router.get("/healthz", async (_req, res) => {
     venue.routerDeployed &&
     venue.permit2Deployed;
   const aiConfigured = Boolean(
-    process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL &&
-      process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+    process.env.OPENAI_API_KEY ||
+      (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL &&
+        process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
   );
   const alertsConfigured = Boolean(alertWebhookUrl());
   const requiredHealthy = dbOk && chain.connected && venue.reachable && contractsDeployed;

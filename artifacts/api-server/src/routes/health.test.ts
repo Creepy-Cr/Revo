@@ -34,8 +34,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetHealthCache();
   process.env.ALERT_WEBHOOK_URL = "https://alerts.example.test/hook";
-  process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL = "https://ai.example.test";
-  process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY = "configured";
+  process.env.AI_INTEGRATIONS_OPENAI_BASE_URL = "https://ai.example.test";
+  process.env.AI_INTEGRATIONS_OPENAI_API_KEY = "configured";
   execute.mockResolvedValue({ rows: [{ "?column?": 1 }] });
   getChainStatus.mockResolvedValue({
     connected: true,

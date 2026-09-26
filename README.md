@@ -63,7 +63,7 @@ and operational risk, including possible loss of funds.
 
 | Step | What happens | Who or what is in control |
 | --- | --- | --- |
-| **Instruct** | A strategist types an instruction in plain English. Arcus (Claude, via the Anthropic API) compiles it into a structured policy draft. | Human writes, model drafts |
+| **Instruct** | A strategist types an instruction in plain English. Arcus (OpenAI) compiles it into a structured policy draft. | Human writes, model drafts |
 | **Decide** | The deterministic policy engine clamps allocation, reserve and drawdown targets to hard limits, then opens a proposal. An approver approves or rejects. In Autonomous mode, in-policy rebalance drafts are approved automatically. | Server enforces, human approves |
 | **Settle** | An approved rebalance is quoted on Uniswap v4, preflighted, signed by the treasury's custody key, broadcast on Arc and confirmed from the receipt. Deposits and withdrawals move real USDC the same way. | Custody key, under pause and cap checks |
 | **Control** | Guardians can drop the treasury into Safe mode or trigger the emergency pause at any time. Everything is written to a hash-chained audit trail. Arcus can explain any of it, but cannot override any of it. | Human, always |
@@ -239,7 +239,7 @@ lifting the pause both require a session that is less than 15 minutes old.
 │   ├── api-zod/              Generated Zod schemas shared by server and client
 │   ├── api-client-react/     Generated React Query client
 │   ├── db/                   Drizzle ORM schema and PostgreSQL connection
-│   └── integrations-anthropic-ai/  Anthropic client wired to the Replit AI proxy
+│   └── integrations-anthropic-ai/  Legacy package; Arcus no longer uses it
 ├── scripts/                  Maintenance scripts (architecture diagram render, post-merge setup)
 └── docs/                     Architecture write-up, diagram source and README assets
 ```
@@ -257,7 +257,7 @@ generated from it.
   what the hosted environment runs; on macOS or ARM, remove the platform `overrides` block in
   `pnpm-workspace.yaml` before `pnpm install` (see the note there)
 - PostgreSQL (any recent version; a connection string is enough)
-- An Anthropic-compatible endpoint for Arcus (`AI_INTEGRATIONS_ANTHROPIC_*`, see below)
+- An OpenAI API key for external hosting, or the Replit OpenAI integration for local previews
 - A browser wallet (MetaMask, Rabby, Phantom or OKX) with Arc mainnet added and real USDC
 
 ### Install and run
@@ -273,8 +273,7 @@ pnpm --filter @workspace/db push
 
 # Terminal 1: API on http://localhost:8080
 export CUSTODY_MASTER_SECRET=$(openssl rand -hex 32)
-export AI_INTEGRATIONS_ANTHROPIC_API_KEY=...
-export AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com
+export OPENAI_API_KEY=...
 PORT=8080 pnpm --filter @workspace/api-server run dev
 
 # Terminal 2: web app on http://localhost:5173, forwarding /api to the API
@@ -299,8 +298,10 @@ its own treasury provisioned on the spot and becomes its admin.
 | `DATABASE_URL` | yes | PostgreSQL connection string |
 | `CUSTODY_MASTER_SECRET` | yes in production | Master secret (16+ chars) for custody key envelope encryption. Outside production `SESSION_SECRET` is accepted as a fallback |
 | `SESSION_SECRET` | no | Development-only fallback for `CUSTODY_MASTER_SECRET`. Sessions themselves are random database-backed tokens and need no signing key |
-| `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | yes | API key for Arcus |
-| `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` | yes | Anthropic-compatible base URL |
+| `OPENAI_API_KEY` | yes for external hosting | Direct OpenAI API key for Arcus; store only on the API host |
+| `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL` | alternative in Replit | Automatically provisioned Replit OpenAI proxy credentials for development |
+| `OPENAI_POLICY_MODEL`, `OPENAI_CHAT_MODEL` | no | Optional OpenAI model overrides; both default to `gpt-5.6-terra` |
+| `WORKER_ENABLED` | no | Worker runs by default in production and stays off in development; set `false` for a production pause or `true` to opt in during development |
 | `ARC_RPC_URLS` | no | Comma-separated Arc mainnet RPC override list; otherwise the built-in public providers use automatic failover |
 | `ALERT_WEBHOOK_URL` | no | POST target for critical alerts; Slack incoming webhooks are supported |
 | `REBALANCE_MAX_USD_PER_TRADE` | no | Absolute rebalance cap per trade, defaults to `25000` |
@@ -366,7 +367,7 @@ does not exist and wallet sign-in and live data will not work.
 On the API host set `APP_ORIGINS` to the exact Vercel frontend origin(s);
 the **first** entry is embedded in the wallet sign-in message. Also configure
 the backend's `DATABASE_URL`, dedicated `CUSTODY_MASTER_SECRET`, and
-`AI_INTEGRATIONS_ANTHROPIC_*` values as described below. Verify the backend
+`OPENAI_API_KEY` (or the Replit OpenAI integration in development). Verify the backend
 health endpoint and wallet sign-in on the intended domain **before** enabling
 any live treasury operation. Vercel preview deployments use changing hostnames;
 add their exact origins to `APP_ORIGINS` if sign-in is needed there. Never place
@@ -400,8 +401,7 @@ Code is not available for new services, so set the service options in Railway
 3. In the Railway API service variables, set `CUSTODY_MASTER_SECRET` (a stable,
    dedicated production secret of at least 16 characters), `APP_ORIGINS`
    (comma-separated exact frontend origins, with the primary production URL
-   first), `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, and
-   `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`. The start command forces
+   first), and `OPENAI_API_KEY` (a direct OpenAI key for Railway). The start command forces
    `NODE_ENV=production`; `SESSION_SECRET` is **not** a production custody
    fallback. If migrating existing sealed treasury keys, preserve the original
    custody master secret or those keys cannot be opened. Optional values
@@ -461,7 +461,7 @@ local setup, conventions and the areas that need extra care. Please follow the
 - Arc: [arc.network](https://arc.network) · [docs](https://docs.arc.network) · [explorer](https://explorer.arc.io)
 - Circle: [Gateway](https://developers.circle.com/gateway) · [developer docs](https://developers.circle.com)
 - Venue and registry: [Uniswap v4 Arc deployments](https://docs.uniswap.org/contracts/v4/deployments) · [Tower Exchange](https://docs.tower.exchange)
-- Model: [Anthropic](https://docs.anthropic.com)
+- Model: [OpenAI](https://platform.openai.com/docs)
 
 ## Licence
 
